@@ -23,7 +23,7 @@ import {
   ViewUpdate
 } from "@codemirror/view";
 
-type CommentDisplayMode = "bottom-sheet" | "inline-popover";
+type CommentDisplayMode = "bottom-sheet" | "inline-popover" | "right-side";
 type UnderlineStyle = "solid" | "dotted" | "dashed" | "wavy";
 
 interface HighlightStyle {
@@ -127,6 +127,7 @@ export default class NotesCommentsPlugin extends Plugin {
   settings: NotesCommentsSettings = DEFAULT_SETTINGS;
   private bottomSheetEl: HTMLElement | null = null;
   private inlinePopoverEl: HTMLElement | null = null;
+  private rightPanelEl: HTMLElement | null = null;
   private editPopoverEl: HTMLElement | null = null;
   private dynamicStyleEl: HTMLStyleElement | null = null;
   private inlineAnchorEl: HTMLElement | null = null;
@@ -237,7 +238,7 @@ export default class NotesCommentsPlugin extends Plugin {
         : fallbackStyleId;
 
     this.settings = {
-      displayMode: loaded?.displayMode === "inline-popover" ? "inline-popover" : "bottom-sheet",
+      displayMode: normalizeDisplayMode(loaded?.displayMode),
       defaultStyleId,
       styles,
       comments: normalizeComments(loaded?.comments, defaultStyleId)
@@ -457,6 +458,11 @@ export default class NotesCommentsPlugin extends Plugin {
     document.body.appendChild(inlinePopoverEl);
     this.inlinePopoverEl = inlinePopoverEl;
 
+    const rightPanelEl = document.createElement("div");
+    rightPanelEl.className = "onc-right-panel";
+    document.body.appendChild(rightPanelEl);
+    this.rightPanelEl = rightPanelEl;
+
     const editPopoverEl = document.createElement("div");
     editPopoverEl.className = "onc-edit-popover";
     document.body.appendChild(editPopoverEl);
@@ -465,6 +471,7 @@ export default class NotesCommentsPlugin extends Plugin {
     this.register(() => {
       this.bottomSheetEl?.remove();
       this.inlinePopoverEl?.remove();
+      this.rightPanelEl?.remove();
       this.editPopoverEl?.remove();
       this.dynamicStyleEl?.remove();
     });
@@ -516,7 +523,8 @@ export default class NotesCommentsPlugin extends Plugin {
     this.registerDomEvent(document, "pointerdown", (event: PointerEvent) => {
       const editPopoverVisible = this.editPopoverEl?.hasClass("onc-visible") ?? false;
       const bottomSheetVisible = this.bottomSheetEl?.hasClass("onc-visible") ?? false;
-      if (!editPopoverVisible && !bottomSheetVisible) {
+      const rightPanelVisible = this.rightPanelEl?.hasClass("onc-visible") ?? false;
+      if (!editPopoverVisible && !bottomSheetVisible && !rightPanelVisible) {
         return;
       }
 
@@ -533,6 +541,13 @@ export default class NotesCommentsPlugin extends Plugin {
       }
 
       if (this.bottomSheetEl?.hasClass("onc-visible") && this.bottomSheetEl.contains(target)) {
+        if (!(target instanceof Element) || !target.closest(".onc-style-picker")) {
+          this.closeStylePickers();
+        }
+        return;
+      }
+
+      if (this.rightPanelEl?.hasClass("onc-visible") && this.rightPanelEl.contains(target)) {
         if (!(target instanceof Element) || !target.closest(".onc-style-picker")) {
           this.closeStylePickers();
         }
@@ -559,7 +574,7 @@ export default class NotesCommentsPlugin extends Plugin {
       this.clearRepositionFrame();
     });
 
-    for (const surface of [bottomSheetEl, inlinePopoverEl, editPopoverEl]) {
+    for (const surface of [bottomSheetEl, inlinePopoverEl, rightPanelEl, editPopoverEl]) {
       this.registerDomEvent(surface, "pointerenter", () => {
         this.clearHideTimer();
       });
@@ -582,32 +597,48 @@ export default class NotesCommentsPlugin extends Plugin {
 
     if (this.settings.displayMode === "inline-popover") {
       this.showInlinePopover(sourceEl, id, comment);
+    } else if (this.settings.displayMode === "right-side") {
+      this.showRightPanel(sourceEl, id, comment);
     } else {
       this.showBottomSheet(sourceEl, id, comment);
     }
   }
 
   private showBottomSheet(sourceEl: HTMLElement, id: string, comment: CommentRecord | null): void {
-    if (!this.bottomSheetEl || !this.inlinePopoverEl) {
+    if (!this.bottomSheetEl || !this.inlinePopoverEl || !this.rightPanelEl) {
       return;
     }
 
     this.inlineAnchorEl = null;
     this.inlinePopoverEl.removeClass("onc-visible");
+    this.rightPanelEl.removeClass("onc-visible");
     this.renderHoverContent(this.bottomSheetEl, id, comment, sourceEl);
     this.bottomSheetEl.addClass("onc-visible");
   }
 
   private showInlinePopover(sourceEl: HTMLElement, id: string, comment: CommentRecord | null): void {
-    if (!this.inlinePopoverEl || !this.bottomSheetEl) {
+    if (!this.inlinePopoverEl || !this.bottomSheetEl || !this.rightPanelEl) {
       return;
     }
 
     this.bottomSheetEl.removeClass("onc-visible");
+    this.rightPanelEl.removeClass("onc-visible");
     this.renderHoverContent(this.inlinePopoverEl, id, comment, sourceEl);
     this.inlinePopoverEl.addClass("onc-visible");
     this.inlineAnchorEl = sourceEl;
     this.positionInlinePopover(sourceEl);
+  }
+
+  private showRightPanel(sourceEl: HTMLElement, id: string, comment: CommentRecord | null): void {
+    if (!this.rightPanelEl || !this.bottomSheetEl || !this.inlinePopoverEl) {
+      return;
+    }
+
+    this.inlineAnchorEl = null;
+    this.bottomSheetEl.removeClass("onc-visible");
+    this.inlinePopoverEl.removeClass("onc-visible");
+    this.renderHoverContent(this.rightPanelEl, id, comment, sourceEl);
+    this.rightPanelEl.addClass("onc-visible");
   }
 
   private positionInlinePopover(sourceEl: HTMLElement): void {
@@ -696,8 +727,11 @@ export default class NotesCommentsPlugin extends Plugin {
       editButton.addEventListener("click", (event: MouseEvent) => {
         event.preventDefault();
         event.stopPropagation();
-        if (container === this.bottomSheetEl && this.settings.displayMode === "bottom-sheet") {
-          this.renderBottomSheetEditContent(container, id, comment, sourceEl);
+        if (
+          (container === this.bottomSheetEl && this.settings.displayMode === "bottom-sheet") ||
+          (container === this.rightPanelEl && this.settings.displayMode === "right-side")
+        ) {
+          this.renderPanelEditContent(container, id, comment, sourceEl);
         } else {
           this.openEditCommentPopover(id, sourceEl);
         }
@@ -755,7 +789,7 @@ export default class NotesCommentsPlugin extends Plugin {
     void MarkdownRenderer.render(this.app, markdown, container, comment.filePath, this);
   }
 
-  private renderBottomSheetEditContent(
+  private renderPanelEditContent(
     container: HTMLElement,
     id: string,
     comment: CommentRecord,
@@ -1069,7 +1103,7 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private closeStylePickers(): void {
-    const roots = [this.editPopoverEl, this.bottomSheetEl, this.inlinePopoverEl];
+    const roots = [this.editPopoverEl, this.bottomSheetEl, this.inlinePopoverEl, this.rightPanelEl];
     for (const root of roots) {
       const pickers = root?.querySelectorAll<HTMLElement>(".onc-style-picker.onc-open") ?? [];
       for (const picker of Array.from(pickers)) {
@@ -1164,6 +1198,7 @@ export default class NotesCommentsPlugin extends Plugin {
     this.inlineAnchorEl = null;
     this.bottomSheetEl?.removeClass("onc-visible");
     this.inlinePopoverEl?.removeClass("onc-visible");
+    this.rightPanelEl?.removeClass("onc-visible");
   }
 
   private closeEditPopover(): void {
@@ -1239,7 +1274,7 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private isInsideHoverSurface(node: Node): boolean {
-    return Boolean(this.bottomSheetEl?.contains(node) || this.inlinePopoverEl?.contains(node));
+    return Boolean(this.bottomSheetEl?.contains(node) || this.inlinePopoverEl?.contains(node) || this.rightPanelEl?.contains(node));
   }
 }
 
@@ -1264,6 +1299,7 @@ class NotesCommentsSettingTab extends PluginSettingTab {
         dropdown
           .addOption("bottom-sheet", "底部中间滑出")
           .addOption("inline-popover", "标记处弹出")
+          .addOption("right-side", "中间右侧滑出")
           .setValue(this.plugin.settings.displayMode)
           .onChange(async (value) => {
             this.plugin.settings.displayMode = value as CommentDisplayMode;
@@ -1545,6 +1581,13 @@ function ensureClassAttribute(attrs: string, className: string): string {
 
 function createCommentId(): string {
   return `onc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeDisplayMode(value: unknown): CommentDisplayMode {
+  if (value === "inline-popover" || value === "right-side") {
+    return value;
+  }
+  return "bottom-sheet";
 }
 
 function normalizeStyles(styles: HighlightStyle[] | undefined): HighlightStyle[] {

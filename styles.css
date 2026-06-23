@@ -17,6 +17,7 @@
 
 .onc-bottom-sheet,
 .onc-inline-popover,
+.onc-right-panel,
 .onc-edit-popover {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
@@ -63,6 +64,27 @@
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
+}
+
+.onc-right-panel {
+  border-radius: 8px 0 0 8px;
+  max-height: min(560px, calc(100vh - 48px));
+  opacity: 0;
+  overflow: auto;
+  padding: 14px 16px 16px;
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translate(calc(100% + 16px), -50%);
+  transition: transform 180ms ease, opacity 180ms ease;
+  width: min(380px, calc(100vw - 32px));
+}
+
+.onc-right-panel.onc-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
 }
 
 .onc-edit-popover {
