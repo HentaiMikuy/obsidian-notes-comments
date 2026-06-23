@@ -826,7 +826,9 @@ export default class NotesCommentsPlugin extends Plugin {
   ): void {
     const message = threadEl.createDiv({ cls: "onc-comment-message" });
     const meta = message.createDiv({ cls: "onc-comment-message-meta" });
-    meta.createSpan({ cls: "onc-comment-message-author", text: this.getCommentAuthorName(comment) });
+    const authorName = this.getCommentAuthorName(comment);
+    const authorEl = meta.createSpan({ cls: "onc-comment-message-author", text: authorName });
+    authorEl.setAttribute("title", authorName);
     meta.createSpan({
       cls: "onc-comment-message-time",
       text: new Date(comment.updatedAt).toLocaleString()

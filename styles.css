@@ -340,9 +340,13 @@
 }
 
 .onc-comment-message-author {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  font-weight: 600;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .onc-comment-message-time {
