@@ -228,6 +228,26 @@
   white-space: pre-wrap;
 }
 
+.onc-comment-body.markdown-rendered {
+  white-space: normal;
+}
+
+.onc-comment-body.markdown-rendered > :first-child {
+  margin-top: 0;
+}
+
+.onc-comment-body.markdown-rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.onc-comment-body.markdown-rendered img {
+  max-width: 100%;
+}
+
+.onc-comment-body.markdown-rendered pre {
+  white-space: pre-wrap;
+}
+
 .onc-comment-actions {
   display: flex;
   gap: 4px;

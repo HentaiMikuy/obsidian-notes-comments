@@ -4,6 +4,7 @@ import {
   EditorPosition,
   EventRef,
   MarkdownFileInfo,
+  MarkdownRenderer,
   MarkdownView,
   Menu,
   Notice,
@@ -671,7 +672,7 @@ export default class NotesCommentsPlugin extends Plugin {
     quote.setText(comment?.quote ?? sourceEl.innerText.trim());
 
     const body = container.createDiv({ cls: "onc-comment-body" });
-    body.setText(comment?.comment ?? "未找到这条留言的数据。");
+    this.renderCommentMarkdown(body, comment);
 
     const actions = container.createDiv({ cls: "onc-comment-actions" });
 
@@ -721,6 +722,24 @@ export default class NotesCommentsPlugin extends Plugin {
       mark.setAttribute("tabindex", "0");
       mark.setAttribute("aria-label", "有留言的标记");
     }
+  }
+
+  private renderCommentMarkdown(container: HTMLElement, comment: CommentRecord | null): void {
+    clearElement(container);
+
+    if (!comment) {
+      container.setText("未找到这条留言的数据。");
+      return;
+    }
+
+    const markdown = comment.comment.trim();
+    if (!markdown) {
+      container.setText("留言内容为空。");
+      return;
+    }
+
+    container.addClass("markdown-rendered");
+    void MarkdownRenderer.render(this.app, markdown, container, comment.filePath, this);
   }
 
   private renderEditPopover(comment: CommentRecord): void {
