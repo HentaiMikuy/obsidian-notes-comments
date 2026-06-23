@@ -1,7 +1,7 @@
 {
   "name": "obsidian-notes-comments",
-  "version": "0.1.0",
-  "description": "An Obsidian plugin for highlighted comments and supplemental notes.",
+  "version": "0.2.0",
+  "description": "An Obsidian plugin for highlighted text with threaded comments and supplemental notes.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

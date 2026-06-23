@@ -1,9 +1,9 @@
 {
   "id": "obsidian-notes-comments",
   "name": "Notes Comments",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minAppVersion": "1.5.0",
-  "description": "Highlight note text and attach comments or supplemental notes.",
+  "description": "Highlight note text and attach threaded comments or supplemental notes.",
   "author": "HentaiMikuy",
   "authorUrl": "",
   "isDesktopOnly": false
