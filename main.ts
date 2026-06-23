@@ -1341,7 +1341,11 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private autoResizeTextarea(textarea: HTMLTextAreaElement): void {
-    const maxHeight = Math.floor(window.innerHeight * 0.5);
+    const cssMaxHeight = Number.parseFloat(window.getComputedStyle(textarea).maxHeight);
+    const viewportMaxHeight = Math.floor(window.innerHeight * 0.5);
+    const maxHeight = Number.isFinite(cssMaxHeight)
+      ? Math.min(cssMaxHeight, viewportMaxHeight)
+      : viewportMaxHeight;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";

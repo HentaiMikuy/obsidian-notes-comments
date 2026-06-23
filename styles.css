@@ -21,18 +21,23 @@
 .onc-edit-popover {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
+  box-sizing: border-box;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   color: var(--text-normal);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   z-index: var(--layer-popover);
 }
 
 .onc-bottom-sheet {
+  --onc-thread-max-height: min(34vh, 340px);
+  --onc-textarea-max-height: min(24vh, 220px);
   border-radius: 8px 8px 0 0;
   bottom: 0;
   left: 50%;
-  max-height: min(48vh, 420px);
+  max-height: min(56vh, 520px);
   opacity: 0;
-  overflow: auto;
   padding: 14px 16px 16px;
   pointer-events: none;
   position: fixed;
@@ -48,16 +53,17 @@
 }
 
 .onc-inline-popover {
+  --onc-thread-max-height: min(26vh, 180px);
+  --onc-textarea-max-height: min(22vh, 150px);
   border-radius: 8px;
-  max-height: min(48vh, 360px);
+  max-height: min(42vh, 320px);
   opacity: 0;
-  overflow: auto;
   padding: 12px;
   pointer-events: none;
   position: fixed;
   transform: translateY(4px);
   transition: transform 120ms ease, opacity 120ms ease;
-  width: max-content;
+  width: min(360px, calc(100vw - 24px));
 }
 
 .onc-inline-popover.onc-visible {
@@ -67,10 +73,11 @@
 }
 
 .onc-right-panel {
+  --onc-thread-max-height: min(52vh, 460px);
+  --onc-textarea-max-height: min(32vh, 280px);
   border-radius: 8px 0 0 8px;
-  max-height: min(560px, calc(100vh - 48px));
+  max-height: min(72vh, 640px);
   opacity: 0;
-  overflow: auto;
   padding: 14px 16px 16px;
   pointer-events: none;
   position: fixed;
@@ -88,7 +95,9 @@
 }
 
 .onc-edit-popover {
+  --onc-textarea-max-height: min(34vh, 240px);
   border-radius: 8px;
+  max-height: min(48vh, 360px);
   opacity: 0;
   padding: 10px;
   pointer-events: none;
@@ -107,6 +116,7 @@
 .onc-edit-style-row {
   align-items: center;
   display: flex;
+  flex: 0 0 auto;
   gap: 6px;
   margin-bottom: 8px;
 }
@@ -118,6 +128,7 @@
 }
 
 .onc-author-input {
+  flex: 0 0 auto;
   margin-bottom: 8px;
   width: 100%;
 }
@@ -240,9 +251,11 @@
 }
 
 .onc-edit-textarea {
+  flex: 1 1 auto;
   line-height: 1.5;
+  max-height: var(--onc-textarea-max-height, 220px);
   min-height: 96px;
-  overflow: hidden;
+  overflow: auto;
   resize: none;
   width: 100%;
 }
@@ -254,6 +267,7 @@
 .onc-comment-header {
   align-items: center;
   display: flex;
+  flex: 0 0 auto;
   gap: 12px;
   justify-content: space-between;
   margin-bottom: 8px;
@@ -274,6 +288,7 @@
 .onc-comment-quote {
   border-left: 3px solid var(--background-modifier-border);
   color: var(--text-muted);
+  flex: 0 0 auto;
   font-size: var(--font-ui-small);
   line-height: 1.5;
   margin-bottom: 10px;
@@ -283,9 +298,11 @@
 }
 
 .onc-comment-body {
+  flex: 1 1 auto;
   font-size: var(--font-ui-medium);
   line-height: 1.55;
   max-height: 220px;
+  min-height: 0;
   overflow: auto;
   white-space: pre-wrap;
 }
@@ -312,15 +329,18 @@
 
 .onc-comment-thread {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 10px;
-  max-height: 240px;
+  max-height: var(--onc-thread-max-height, 240px);
+  min-height: 0;
   overflow: auto;
   padding-right: 2px;
 }
 
 .onc-comment-message {
   border-left: 2px solid var(--background-modifier-border);
+  flex: 0 0 auto;
   padding-left: 10px;
 }
 
@@ -357,6 +377,7 @@
 }
 
 .onc-comment-message-body {
+  flex: 0 0 auto;
   margin-top: 2px;
   max-height: none;
   overflow: visible;
@@ -364,6 +385,7 @@
 
 .onc-comment-actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 4px;
   justify-content: flex-end;
   margin-top: 12px;
