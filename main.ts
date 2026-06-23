@@ -76,6 +76,13 @@ interface StylePickerControl {
   close: () => void;
 }
 
+interface DropdownOption {
+  value: string;
+  label: string;
+  swatchColor?: string;
+  swatchBorderColor?: string;
+}
+
 type RegisterEditorMenuEvent = (
   name: "editor-menu",
   callback: (menu: Menu, editor: Editor, view: MarkdownView) => void
@@ -1330,20 +1337,23 @@ class NotesCommentsSettingTab extends PluginSettingTab {
     containerEl.addClass("onc-settings");
     containerEl.createEl("h2", { text: "Notes Comments" });
 
-    new Setting(containerEl)
+    const displayModeSetting = new Setting(containerEl)
       .setName("留言展示方式")
-      .setDesc("选择鼠标移动到标记文字时，留言框出现的位置。")
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption("bottom-sheet", "底部中间滑出")
-          .addOption("inline-popover", "标记处弹出")
-          .addOption("right-side", "中间右侧滑出")
-          .setValue(this.plugin.settings.displayMode)
-          .onChange(async (value) => {
-            this.plugin.settings.displayMode = value as CommentDisplayMode;
-            await this.plugin.saveSettings();
-          });
-      });
+      .setDesc("选择鼠标移动到标记文字时，留言框出现的位置。");
+    this.renderSettingsDropdown(
+      displayModeSetting.controlEl,
+      [
+        { value: "bottom-sheet", label: "底部中间滑出" },
+        { value: "inline-popover", label: "标记处弹出" },
+        { value: "right-side", label: "中间右侧滑出" }
+      ],
+      this.plugin.settings.displayMode,
+      async (value) => {
+        this.plugin.settings.displayMode = value as CommentDisplayMode;
+        await this.plugin.saveSettings();
+      },
+      "留言展示方式"
+    );
 
     new Setting(containerEl)
       .setName("默认备注人名称")
@@ -1358,19 +1368,24 @@ class NotesCommentsSettingTab extends PluginSettingTab {
           });
       });
 
-    new Setting(containerEl)
+    const defaultStyleSetting = new Setting(containerEl)
       .setName("默认标记样式")
-      .setDesc("新增标记留言时默认使用的样式。")
-      .addDropdown((dropdown) => {
-        for (const style of this.plugin.settings.styles) {
-          dropdown.addOption(style.id, style.name);
-        }
-        dropdown.setValue(this.plugin.settings.defaultStyleId);
-        dropdown.onChange(async (value) => {
-          this.plugin.settings.defaultStyleId = value;
-          await this.plugin.saveSettings();
-        });
-      });
+      .setDesc("新增标记留言时默认使用的样式。");
+    this.renderSettingsDropdown(
+      defaultStyleSetting.controlEl,
+      this.plugin.settings.styles.map((style) => ({
+        value: style.id,
+        label: style.name,
+        swatchColor: style.backgroundColor,
+        swatchBorderColor: style.underlineColor
+      })),
+      this.plugin.settings.defaultStyleId,
+      async (value) => {
+        this.plugin.settings.defaultStyleId = value;
+        await this.plugin.saveSettings();
+      },
+      "默认标记样式"
+    );
 
     new Setting(containerEl)
       .setName("样式预设")
@@ -1448,20 +1463,22 @@ class NotesCommentsSettingTab extends PluginSettingTab {
           });
       });
 
-    new Setting(section)
-      .setName("下划线样式")
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption("solid", "实线")
-          .addOption("dotted", "点线")
-          .addOption("dashed", "虚线")
-          .addOption("wavy", "波浪线")
-          .setValue(style.underlineStyle)
-          .onChange(async (value) => {
-            style.underlineStyle = safeUnderlineStyle(value);
-            await this.plugin.saveSettings();
-          });
-      });
+    const underlineSetting = new Setting(section).setName("下划线样式");
+    this.renderSettingsDropdown(
+      underlineSetting.controlEl,
+      [
+        { value: "solid", label: "实线" },
+        { value: "dotted", label: "点线" },
+        { value: "dashed", label: "虚线" },
+        { value: "wavy", label: "波浪线" }
+      ],
+      style.underlineStyle,
+      async (value) => {
+        style.underlineStyle = safeUnderlineStyle(value);
+        await this.plugin.saveSettings();
+      },
+      "下划线样式"
+    );
 
     new Setting(section)
       .setName("删除这个样式")
@@ -1478,6 +1495,96 @@ class NotesCommentsSettingTab extends PluginSettingTab {
             this.display();
           });
       });
+  }
+
+  private renderSettingsDropdown(
+    parentEl: HTMLElement,
+    options: DropdownOption[],
+    selectedValue: string,
+    onChange: (value: string) => Promise<void>,
+    ariaLabel: string
+  ): void {
+    let currentValue = options.some((option) => option.value === selectedValue) ? selectedValue : options[0]?.value ?? "";
+    const wrapper = parentEl.createDiv({ cls: "onc-style-picker onc-settings-select" });
+    const trigger = wrapper.createEl("button", { cls: "onc-style-picker-trigger" });
+    trigger.type = "button";
+    trigger.setAttribute("aria-label", ariaLabel);
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+
+    const swatch = trigger.createSpan({ cls: "onc-style-picker-swatch" });
+    const label = trigger.createSpan({ cls: "onc-style-picker-label" });
+    const chevron = trigger.createSpan({ cls: "onc-style-picker-chevron" });
+    setIcon(chevron, "chevron-down");
+
+    const menu = wrapper.createDiv({ cls: "onc-style-picker-menu" });
+    menu.setAttribute("role", "listbox");
+
+    const close = (): void => {
+      wrapper.removeClass("onc-open");
+      trigger.setAttribute("aria-expanded", "false");
+    };
+
+    const update = (): void => {
+      const selected = options.find((option) => option.value === currentValue) ?? options[0];
+      label.setText(selected?.label ?? "");
+      if (selected?.swatchColor) {
+        swatch.style.display = "";
+        swatch.style.backgroundColor = selected.swatchColor;
+        swatch.style.borderColor = selected.swatchBorderColor ?? selected.swatchColor;
+      } else {
+        swatch.style.display = "none";
+      }
+
+      const optionEls = menu.querySelectorAll<HTMLElement>(".onc-style-picker-option");
+      for (const optionEl of Array.from(optionEls)) {
+        const selectedOption = optionEl.dataset.value === currentValue;
+        optionEl.toggleClass("is-selected", selectedOption);
+        optionEl.setAttribute("aria-selected", selectedOption ? "true" : "false");
+      }
+    };
+
+    for (const option of options) {
+      const optionEl = menu.createEl("button", { cls: "onc-style-picker-option" });
+      optionEl.type = "button";
+      optionEl.dataset.value = option.value;
+      optionEl.setAttribute("role", "option");
+
+      if (option.swatchColor) {
+        const optionSwatch = optionEl.createSpan({ cls: "onc-style-picker-swatch" });
+        optionSwatch.style.backgroundColor = option.swatchColor;
+        optionSwatch.style.borderColor = option.swatchBorderColor ?? option.swatchColor;
+      }
+      optionEl.createSpan({ cls: "onc-style-picker-option-label", text: option.label });
+
+      optionEl.addEventListener("click", (event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        currentValue = option.value;
+        update();
+        close();
+        void onChange(currentValue);
+      });
+    }
+
+    trigger.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const shouldOpen = !wrapper.hasClass("onc-open");
+      this.closeSettingsDropdowns();
+      wrapper.toggleClass("onc-open", shouldOpen);
+      trigger.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    });
+
+    update();
+  }
+
+  private closeSettingsDropdowns(): void {
+    const pickers = this.containerEl.querySelectorAll<HTMLElement>(".onc-settings-select.onc-open");
+    for (const picker of Array.from(pickers)) {
+      picker.removeClass("onc-open");
+      picker.querySelector("button")?.setAttribute("aria-expanded", "false");
+    }
   }
 }
 
