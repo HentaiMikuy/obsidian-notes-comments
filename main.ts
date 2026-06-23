@@ -1260,10 +1260,11 @@ export default class NotesCommentsPlugin extends Plugin {
 
   private scheduleHideHoverSurfaces(): void {
     this.clearHideTimer();
+    const delayMs = this.settings.displayMode === "inline-popover" ? 180 : 650;
     this.hideTimer = window.setTimeout(() => {
       this.hideHoverSurfaces();
       this.hideTimer = null;
-    }, 180);
+    }, delayMs);
   }
 
   private clearHideTimer(): void {

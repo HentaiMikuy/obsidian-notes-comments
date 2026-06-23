@@ -335,6 +335,13 @@
   max-width: 560px;
 }
 
+.onc-settings .setting-item,
+.onc-settings .setting-item-info,
+.onc-settings .setting-item-control,
+.onc-style-editor {
+  background: transparent;
+}
+
 .onc-style-editor {
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
