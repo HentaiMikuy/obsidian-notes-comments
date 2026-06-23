@@ -123,8 +123,13 @@ export default class NotesCommentsPlugin extends Plugin {
   private inlinePopoverEl: HTMLElement | null = null;
   private editPopoverEl: HTMLElement | null = null;
   private dynamicStyleEl: HTMLStyleElement | null = null;
+  private inlineAnchorEl: HTMLElement | null = null;
+  private editAnchorEl: HTMLElement | null = null;
+  private createAnchorRange: Range | null = null;
+  private activeEditCommentId: string | null = null;
   private hideTimer: number | null = null;
   private editSaveTimer: number | null = null;
+  private repositionFrame: number | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -208,6 +213,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
   onunload(): void {
     this.clearHideTimer();
+    this.clearRepositionFrame();
     this.flushEditSave();
     this.hideHoverSurfaces();
     this.closeEditPopover();
@@ -328,13 +334,17 @@ export default class NotesCommentsPlugin extends Plugin {
       from: editor.getCursor("from"),
       to: editor.getCursor("to")
     };
-    const selectionRect = this.getSelectionRect();
+    const selectionRange = this.getSelectionRange();
+    const selectionRect = selectionRange ? getVisibleRangeRect(selectionRange) : null;
 
     if (!this.editPopoverEl) {
       return;
     }
 
+    this.activeEditCommentId = null;
+    this.editAnchorEl = null;
     this.closeEditPopover();
+    this.createAnchorRange = selectionRange;
     this.hideHoverSurfaces();
     this.renderCreatePopover(draft);
     this.editPopoverEl.addClass("onc-visible");
@@ -394,6 +404,9 @@ export default class NotesCommentsPlugin extends Plugin {
     this.hideHoverSurfaces();
     this.renderEditPopover(comment);
     this.editPopoverEl.addClass("onc-visible");
+    this.activeEditCommentId = id;
+    this.editAnchorEl = anchorEl ?? null;
+    this.createAnchorRange = null;
 
     if (anchorEl) {
       this.positionFloatingElement(this.editPopoverEl, anchorEl, 10);
@@ -517,6 +530,17 @@ export default class NotesCommentsPlugin extends Plugin {
       }
     });
 
+    const handleViewportMove = (): void => {
+      this.scheduleRepositionFloatingSurfaces();
+    };
+    window.addEventListener("resize", handleViewportMove);
+    document.addEventListener("scroll", handleViewportMove, true);
+    this.register(() => {
+      window.removeEventListener("resize", handleViewportMove);
+      document.removeEventListener("scroll", handleViewportMove, true);
+      this.clearRepositionFrame();
+    });
+
     for (const surface of [bottomSheetEl, inlinePopoverEl, editPopoverEl]) {
       this.registerDomEvent(surface, "pointerenter", () => {
         this.clearHideTimer();
@@ -550,6 +574,7 @@ export default class NotesCommentsPlugin extends Plugin {
       return;
     }
 
+    this.inlineAnchorEl = null;
     this.inlinePopoverEl.removeClass("onc-visible");
     this.renderHoverContent(this.bottomSheetEl, id, comment, sourceEl);
     this.bottomSheetEl.addClass("onc-visible");
@@ -563,6 +588,7 @@ export default class NotesCommentsPlugin extends Plugin {
     this.bottomSheetEl.removeClass("onc-visible");
     this.renderHoverContent(this.inlinePopoverEl, id, comment, sourceEl);
     this.inlinePopoverEl.addClass("onc-visible");
+    this.inlineAnchorEl = sourceEl;
     this.positionInlinePopover(sourceEl);
   }
 
@@ -851,12 +877,12 @@ export default class NotesCommentsPlugin extends Plugin {
     return this.app.workspace.containerEl.querySelector<HTMLElement>(selector) ?? document.querySelector<HTMLElement>(selector);
   }
 
-  private getSelectionRect(): DOMRect | null {
+  private getSelectionRange(): Range | null {
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
-      const rect = selection.getRangeAt(0).getBoundingClientRect();
-      if (rect.width > 0 || rect.height > 0) {
-        return rect;
+      const range = selection.getRangeAt(0).cloneRange();
+      if (getVisibleRangeRect(range)) {
+        return range;
       }
     }
 
@@ -971,13 +997,65 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private hideHoverSurfaces(): void {
+    this.inlineAnchorEl = null;
     this.bottomSheetEl?.removeClass("onc-visible");
     this.inlinePopoverEl?.removeClass("onc-visible");
   }
 
   private closeEditPopover(): void {
     this.flushEditSave();
+    this.editAnchorEl = null;
+    this.createAnchorRange = null;
+    this.activeEditCommentId = null;
     this.editPopoverEl?.removeClass("onc-visible");
+  }
+
+  private scheduleRepositionFloatingSurfaces(): void {
+    if (this.repositionFrame !== null) {
+      return;
+    }
+
+    this.repositionFrame = window.requestAnimationFrame(() => {
+      this.repositionFrame = null;
+      this.repositionFloatingSurfaces();
+    });
+  }
+
+  private repositionFloatingSurfaces(): void {
+    if (this.inlinePopoverEl?.hasClass("onc-visible")) {
+      if (this.inlineAnchorEl && this.inlineAnchorEl.isConnected && isElementInViewport(this.inlineAnchorEl)) {
+        this.positionInlinePopover(this.inlineAnchorEl);
+      } else {
+        this.hideHoverSurfaces();
+      }
+    }
+
+    if (!this.editPopoverEl?.hasClass("onc-visible")) {
+      return;
+    }
+
+    if (this.createAnchorRange) {
+      const rect = getVisibleRangeRect(this.createAnchorRange);
+      if (rect) {
+        this.positionFloatingElementAtRect(this.editPopoverEl, rect, 10);
+      }
+      return;
+    }
+
+    if ((!this.editAnchorEl || !this.editAnchorEl.isConnected) && this.activeEditCommentId) {
+      this.editAnchorEl = this.findVisibleMarkElement(this.activeEditCommentId);
+    }
+
+    if (this.editAnchorEl && this.editAnchorEl.isConnected && isElementInViewport(this.editAnchorEl)) {
+      this.positionFloatingElement(this.editPopoverEl, this.editAnchorEl, 10);
+    }
+  }
+
+  private clearRepositionFrame(): void {
+    if (this.repositionFrame !== null) {
+      window.cancelAnimationFrame(this.repositionFrame);
+      this.repositionFrame = null;
+    }
   }
 
   private scheduleHideHoverSurfaces(): void {
@@ -1397,6 +1475,22 @@ function findClosestCommentMark(target: EventTarget | null): HTMLElement | null 
   }
 
   return target.closest<HTMLElement>(".onc-comment-mark[data-onc-id]");
+}
+
+function getVisibleRangeRect(range: Range): DOMRect | null {
+  const rect = range.getBoundingClientRect();
+  if ((rect.width > 0 || rect.height > 0) && isRectInViewport(rect)) {
+    return rect;
+  }
+  return null;
+}
+
+function isElementInViewport(element: HTMLElement): boolean {
+  return isRectInViewport(element.getBoundingClientRect());
+}
+
+function isRectInViewport(rect: DOMRect): boolean {
+  return rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
 }
 
 function clearElement(element: HTMLElement): void {
