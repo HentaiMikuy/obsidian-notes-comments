@@ -762,7 +762,6 @@ export default class NotesCommentsPlugin extends Plugin {
   ): void {
     clearElement(container);
 
-    const primaryComment = comments[0] ?? null;
     const latestComment = comments[comments.length - 1] ?? null;
 
     const header = container.createDiv({ cls: "onc-comment-header" });
@@ -773,9 +772,6 @@ export default class NotesCommentsPlugin extends Plugin {
         text: new Date(latestComment.updatedAt).toLocaleString()
       });
     }
-
-    const quote = container.createDiv({ cls: "onc-comment-quote" });
-    quote.setText(primaryComment?.quote ?? sourceEl.innerText.trim());
 
     if (comments.length === 0) {
       const body = container.createDiv({ cls: "onc-comment-body" });
@@ -884,8 +880,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
   private renderReplyContent(container: HTMLElement, threadId: string, sourceEl: HTMLElement): void {
     const comments = this.getThreadComments(threadId);
-    const primaryComment = comments[0] ?? null;
-    if (!primaryComment) {
+    if (comments.length === 0) {
       this.renderHoverContent(container, threadId, comments, sourceEl);
       return;
     }
@@ -894,9 +889,6 @@ export default class NotesCommentsPlugin extends Plugin {
 
     const header = container.createDiv({ cls: "onc-comment-header" });
     header.createDiv({ cls: "onc-comment-style-name", text: "追加留言" });
-
-    const quote = container.createDiv({ cls: "onc-comment-quote" });
-    quote.setText(primaryComment.quote || sourceEl.innerText.trim());
 
     const authorInput = this.renderAuthorInput(container, "");
     const textarea = container.createEl("textarea", { cls: "onc-edit-textarea onc-bottom-edit-textarea" });
@@ -997,9 +989,6 @@ export default class NotesCommentsPlugin extends Plugin {
 
     const header = container.createDiv({ cls: "onc-comment-header" });
     header.createDiv({ cls: "onc-comment-style-name", text: "编辑留言" });
-
-    const quote = container.createDiv({ cls: "onc-comment-quote" });
-    quote.setText(comment.quote);
 
     const styleRow = container.createDiv({ cls: "onc-edit-style-row" });
     this.renderStylePicker(styleRow, this.getThreadStyleId(threadId, comment.styleId), (styleId) => {

@@ -285,18 +285,6 @@
   white-space: nowrap;
 }
 
-.onc-comment-quote {
-  border-left: 3px solid var(--background-modifier-border);
-  color: var(--text-muted);
-  flex: 0 0 auto;
-  font-size: var(--font-ui-small);
-  line-height: 1.5;
-  margin-bottom: 10px;
-  max-height: 72px;
-  overflow: hidden;
-  padding-left: 10px;
-}
-
 .onc-comment-body {
   flex: 1 1 auto;
   font-size: var(--font-ui-medium);
