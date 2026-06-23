@@ -1,0 +1,25 @@
+{
+  "name": "obsidian-notes-comments",
+  "version": "0.1.0",
+  "description": "An Obsidian plugin for highlighted comments and supplemental notes.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "obsidian",
+    "comments",
+    "highlight",
+    "notes"
+  ],
+  "author": "HentaiMikuy",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "builtin-modules": "^5.0.0",
+    "esbuild": "^0.24.2",
+    "obsidian": "latest",
+    "typescript": "^5.7.2"
+  }
+}
