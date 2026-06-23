@@ -37,6 +37,7 @@ interface HighlightStyle {
 
 interface CommentRecord {
   id: string;
+  threadId: string;
   filePath: string;
   quote: string;
   comment: string;
@@ -143,7 +144,7 @@ export default class NotesCommentsPlugin extends Plugin {
   private inlineAnchorEl: HTMLElement | null = null;
   private editAnchorEl: HTMLElement | null = null;
   private createAnchorRange: Range | null = null;
-  private activeEditCommentId: string | null = null;
+  private activeEditThreadId: string | null = null;
   private hideTimer: number | null = null;
   private editSaveTimer: number | null = null;
   private repositionFrame: number | null = null;
@@ -212,7 +213,7 @@ export default class NotesCommentsPlugin extends Plugin {
             .setTitle("编辑标记留言")
             .setIcon("pencil")
             .onClick(() => {
-              this.openEditCommentPopover(span.id);
+              this.openEditCommentPopover(span.id, null, true);
             });
         });
 
@@ -264,6 +265,25 @@ export default class NotesCommentsPlugin extends Plugin {
 
   getComment(id: string): CommentRecord | null {
     return this.settings.comments.find((comment) => comment.id === id) ?? null;
+  }
+
+  getThreadComments(threadId: string): CommentRecord[] {
+    return this.settings.comments
+      .filter((comment) => getCommentThreadId(comment) === threadId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  getThreadPrimaryComment(threadId: string): CommentRecord | null {
+    return this.getThreadComments(threadId)[0] ?? null;
+  }
+
+  getThreadLatestComment(threadId: string): CommentRecord | null {
+    const comments = this.getThreadComments(threadId);
+    return comments[comments.length - 1] ?? null;
+  }
+
+  getThreadStyleId(threadId: string, fallbackStyleId?: string | null): string {
+    return this.getStyle(this.getThreadPrimaryComment(threadId)?.styleId ?? fallbackStyleId ?? this.settings.defaultStyleId).id;
   }
 
   getStyle(styleId: string | null | undefined): HighlightStyle {
@@ -364,7 +384,7 @@ export default class NotesCommentsPlugin extends Plugin {
       return;
     }
 
-    this.activeEditCommentId = null;
+    this.activeEditThreadId = null;
     this.editAnchorEl = null;
     this.closeEditPopover();
     this.createAnchorRange = selectionRange;
@@ -395,7 +415,7 @@ export default class NotesCommentsPlugin extends Plugin {
       return;
     }
 
-    this.openEditCommentPopover(span.id);
+    this.openEditCommentPopover(span.id, null, true);
   }
 
   async removeCommentAtCursor(editor: Editor): Promise<void> {
@@ -409,17 +429,19 @@ export default class NotesCommentsPlugin extends Plugin {
       return;
     }
 
-    await this.deleteComment(span.id, true);
+    await this.deleteCommentThread(span.id, true);
   }
 
-  openEditCommentPopover(id: string, sourceEl?: HTMLElement | null): void {
-    const comment = this.getComment(id);
+  openEditCommentPopover(id: string, sourceEl?: HTMLElement | null, preferThreadLatest = false): void {
+    const threadLatestComment = this.getThreadLatestComment(id);
+    const comment = preferThreadLatest && threadLatestComment ? threadLatestComment : this.getComment(id) ?? threadLatestComment;
     if (!comment) {
       new Notice("未找到这条留言的数据。");
       return;
     }
 
-    const anchorEl = sourceEl ?? this.findVisibleMarkElement(id);
+    const threadId = getCommentThreadId(comment);
+    const anchorEl = sourceEl ?? this.findVisibleMarkElement(threadId);
     if (!this.editPopoverEl) {
       return;
     }
@@ -427,7 +449,7 @@ export default class NotesCommentsPlugin extends Plugin {
     this.hideHoverSurfaces();
     this.renderEditPopover(comment);
     this.editPopoverEl.addClass("onc-visible");
-    this.activeEditCommentId = id;
+    this.activeEditThreadId = threadId;
     this.editAnchorEl = anchorEl ?? null;
     this.createAnchorRange = null;
 
@@ -448,19 +470,46 @@ export default class NotesCommentsPlugin extends Plugin {
     }, 0);
   }
 
-  async deleteComment(id: string, unwrapMarkup: boolean): Promise<void> {
-    const comment = this.getComment(id);
-    const filePath = comment?.filePath;
+  async deleteCommentThread(threadId: string, unwrapMarkup: boolean): Promise<void> {
+    const comments = this.getThreadComments(threadId);
+    const filePath = comments[0]?.filePath;
     let markupChanged = false;
 
     if (unwrapMarkup) {
-      markupChanged = await this.rewriteCommentMarkup((markdown) => unwrapCommentMarkup(markdown, id), filePath);
+      markupChanged = await this.rewriteCommentMarkup((markdown) => unwrapCommentMarkup(markdown, threadId), filePath);
     }
 
-    this.settings.comments = this.settings.comments.filter((record) => record.id !== id);
+    this.settings.comments = this.settings.comments.filter((record) => getCommentThreadId(record) !== threadId);
     await this.saveSettings();
     this.hideHoverSurfaces();
     new Notice(unwrapMarkup && !markupChanged ? "已删除留言数据，但没有找到正文标记。" : "已删除标记留言。");
+  }
+
+  async deleteCommentMessage(commentId: string, unwrapWhenThreadEmpty: boolean): Promise<boolean> {
+    const comment = this.getComment(commentId);
+    if (!comment) {
+      return false;
+    }
+
+    const threadId = getCommentThreadId(comment);
+    const remaining = this.getThreadComments(threadId).filter((record) => record.id !== commentId);
+    let markupChanged = false;
+
+    if (remaining.length === 0 && unwrapWhenThreadEmpty) {
+      markupChanged = await this.rewriteCommentMarkup((markdown) => unwrapCommentMarkup(markdown, threadId), comment.filePath);
+    }
+
+    this.settings.comments = this.settings.comments.filter((record) => record.id !== commentId);
+    await this.saveSettings();
+
+    if (remaining.length === 0) {
+      this.hideHoverSurfaces();
+      new Notice(unwrapWhenThreadEmpty && !markupChanged ? "已删除留言数据，但没有找到正文标记。" : "已删除标记留言。");
+    } else {
+      new Notice("已删除这条留言。");
+    }
+
+    return true;
   }
 
   private createHoverSurfaces(): void {
@@ -601,26 +650,26 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private showCommentForElement(sourceEl: HTMLElement): void {
-    const id = sourceEl.getAttribute("data-onc-id");
-    if (!id) {
+    const threadId = sourceEl.getAttribute("data-onc-id");
+    if (!threadId) {
       return;
     }
 
-    const comment = this.getComment(id);
-    if (comment) {
-      sourceEl.setAttribute("data-onc-style", comment.styleId);
+    const comments = this.getThreadComments(threadId);
+    if (comments.length > 0) {
+      sourceEl.setAttribute("data-onc-style", this.getThreadStyleId(threadId, sourceEl.getAttribute("data-onc-style")));
     }
 
     if (this.settings.displayMode === "inline-popover") {
-      this.showInlinePopover(sourceEl, id, comment);
+      this.showInlinePopover(sourceEl, threadId, comments);
     } else if (this.settings.displayMode === "right-side") {
-      this.showRightPanel(sourceEl, id, comment);
+      this.showRightPanel(sourceEl, threadId, comments);
     } else {
-      this.showBottomSheet(sourceEl, id, comment);
+      this.showBottomSheet(sourceEl, threadId, comments);
     }
   }
 
-  private showBottomSheet(sourceEl: HTMLElement, id: string, comment: CommentRecord | null): void {
+  private showBottomSheet(sourceEl: HTMLElement, threadId: string, comments: CommentRecord[]): void {
     if (!this.bottomSheetEl || !this.inlinePopoverEl || !this.rightPanelEl) {
       return;
     }
@@ -628,24 +677,24 @@ export default class NotesCommentsPlugin extends Plugin {
     this.inlineAnchorEl = null;
     this.inlinePopoverEl.removeClass("onc-visible");
     this.rightPanelEl.removeClass("onc-visible");
-    this.renderHoverContent(this.bottomSheetEl, id, comment, sourceEl);
+    this.renderHoverContent(this.bottomSheetEl, threadId, comments, sourceEl);
     this.bottomSheetEl.addClass("onc-visible");
   }
 
-  private showInlinePopover(sourceEl: HTMLElement, id: string, comment: CommentRecord | null): void {
+  private showInlinePopover(sourceEl: HTMLElement, threadId: string, comments: CommentRecord[]): void {
     if (!this.inlinePopoverEl || !this.bottomSheetEl || !this.rightPanelEl) {
       return;
     }
 
     this.bottomSheetEl.removeClass("onc-visible");
     this.rightPanelEl.removeClass("onc-visible");
-    this.renderHoverContent(this.inlinePopoverEl, id, comment, sourceEl);
+    this.renderHoverContent(this.inlinePopoverEl, threadId, comments, sourceEl);
     this.inlinePopoverEl.addClass("onc-visible");
     this.inlineAnchorEl = sourceEl;
     this.positionInlinePopover(sourceEl);
   }
 
-  private showRightPanel(sourceEl: HTMLElement, id: string, comment: CommentRecord | null): void {
+  private showRightPanel(sourceEl: HTMLElement, threadId: string, comments: CommentRecord[]): void {
     if (!this.rightPanelEl || !this.bottomSheetEl || !this.inlinePopoverEl) {
       return;
     }
@@ -653,7 +702,7 @@ export default class NotesCommentsPlugin extends Plugin {
     this.inlineAnchorEl = null;
     this.bottomSheetEl.removeClass("onc-visible");
     this.inlinePopoverEl.removeClass("onc-visible");
-    this.renderHoverContent(this.rightPanelEl, id, comment, sourceEl);
+    this.renderHoverContent(this.rightPanelEl, threadId, comments, sourceEl);
     this.rightPanelEl.addClass("onc-visible");
   }
 
@@ -707,48 +756,51 @@ export default class NotesCommentsPlugin extends Plugin {
 
   private renderHoverContent(
     container: HTMLElement,
-    id: string,
-    comment: CommentRecord | null,
+    threadId: string,
+    comments: CommentRecord[],
     sourceEl: HTMLElement
   ): void {
     clearElement(container);
 
+    const primaryComment = comments[0] ?? null;
+    const latestComment = comments[comments.length - 1] ?? null;
+
     const header = container.createDiv({ cls: "onc-comment-header" });
-    header.createDiv({ cls: "onc-comment-style-name", text: comment ? this.getCommentAuthorName(comment) : "未知备注" });
-    if (comment) {
+    header.createDiv({ cls: "onc-comment-style-name", text: latestComment ? `${comments.length} 条留言` : "未知备注" });
+    if (latestComment) {
       header.createDiv({
         cls: "onc-comment-time",
-        text: new Date(comment.updatedAt).toLocaleString()
+        text: new Date(latestComment.updatedAt).toLocaleString()
       });
     }
 
     const quote = container.createDiv({ cls: "onc-comment-quote" });
-    quote.setText(comment?.quote ?? sourceEl.innerText.trim());
+    quote.setText(primaryComment?.quote ?? sourceEl.innerText.trim());
 
-    const body = container.createDiv({ cls: "onc-comment-body" });
-    this.renderCommentMarkdown(body, comment);
+    if (comments.length === 0) {
+      const body = container.createDiv({ cls: "onc-comment-body" });
+      this.renderCommentMarkdown(body, null);
+    } else {
+      const thread = container.createDiv({ cls: "onc-comment-thread" });
+      for (const comment of comments) {
+        this.renderCommentMessage(container, thread, threadId, comment, sourceEl);
+      }
+    }
 
     const actions = container.createDiv({ cls: "onc-comment-actions" });
 
-    if (comment) {
-      const editButton = actions.createEl("button", {
+    if (comments.length > 0) {
+      const replyButton = actions.createEl("button", {
         cls: "onc-comment-action onc-icon-button"
       });
-      editButton.type = "button";
-      editButton.setAttribute("aria-label", "编辑留言");
-      editButton.setAttribute("title", "编辑留言");
-      setIcon(editButton, "pencil");
-      editButton.addEventListener("click", (event: MouseEvent) => {
+      replyButton.type = "button";
+      replyButton.setAttribute("aria-label", "追加留言");
+      replyButton.setAttribute("title", "追加留言");
+      setIcon(replyButton, "message-square-plus");
+      replyButton.addEventListener("click", (event: MouseEvent) => {
         event.preventDefault();
         event.stopPropagation();
-        if (
-          (container === this.bottomSheetEl && this.settings.displayMode === "bottom-sheet") ||
-          (container === this.rightPanelEl && this.settings.displayMode === "right-side")
-        ) {
-          this.renderPanelEditContent(container, id, comment, sourceEl);
-        } else {
-          this.openEditCommentPopover(id, sourceEl);
-        }
+        this.renderReplyContent(container, threadId, sourceEl);
       });
     }
 
@@ -756,17 +808,149 @@ export default class NotesCommentsPlugin extends Plugin {
       cls: "onc-comment-action onc-icon-button onc-danger"
     });
     deleteButton.type = "button";
-    deleteButton.setAttribute("aria-label", comment ? "删除留言" : "移除标记");
-    deleteButton.setAttribute("title", comment ? "删除留言" : "移除标记");
+    deleteButton.setAttribute("aria-label", comments.length > 0 ? "删除整个标记线程" : "移除标记");
+    deleteButton.setAttribute("title", comments.length > 0 ? "删除整个标记线程" : "移除标记");
     setIcon(deleteButton, "trash-2");
     deleteButton.addEventListener("click", (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!window.confirm(comment ? "确定删除这个标记和留言吗？" : "确定移除这个失效标记吗？")) {
+      if (!window.confirm(comments.length > 0 ? "确定删除这个标记和全部留言吗？" : "确定移除这个失效标记吗？")) {
         return;
       }
-      void this.deleteComment(id, true);
+      void this.deleteCommentThread(threadId, true);
     });
+  }
+
+  private renderCommentMessage(
+    container: HTMLElement,
+    threadEl: HTMLElement,
+    threadId: string,
+    comment: CommentRecord,
+    sourceEl: HTMLElement
+  ): void {
+    const message = threadEl.createDiv({ cls: "onc-comment-message" });
+    const meta = message.createDiv({ cls: "onc-comment-message-meta" });
+    meta.createSpan({ cls: "onc-comment-message-author", text: this.getCommentAuthorName(comment) });
+    meta.createSpan({
+      cls: "onc-comment-message-time",
+      text: new Date(comment.updatedAt).toLocaleString()
+    });
+
+    const messageActions = meta.createDiv({ cls: "onc-comment-message-actions" });
+    const editButton = messageActions.createEl("button", {
+      cls: "onc-comment-action onc-icon-button"
+    });
+    editButton.type = "button";
+    editButton.setAttribute("aria-label", "编辑这条留言");
+    editButton.setAttribute("title", "编辑这条留言");
+    setIcon(editButton, "pencil");
+    editButton.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (
+        (container === this.bottomSheetEl && this.settings.displayMode === "bottom-sheet") ||
+        (container === this.rightPanelEl && this.settings.displayMode === "right-side")
+      ) {
+        this.renderPanelEditContent(container, threadId, comment, sourceEl);
+      } else {
+        this.openEditCommentPopover(comment.id, sourceEl);
+      }
+    });
+
+    const deleteButton = messageActions.createEl("button", {
+      cls: "onc-comment-action onc-icon-button onc-danger"
+    });
+    deleteButton.type = "button";
+    deleteButton.setAttribute("aria-label", "删除这条留言");
+    deleteButton.setAttribute("title", "删除这条留言");
+    setIcon(deleteButton, "trash-2");
+    deleteButton.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!window.confirm("确定删除这条留言吗？如果这是最后一条留言，会同时移除正文标记。")) {
+        return;
+      }
+      void this.deleteCommentMessage(comment.id, true).then((deleted) => {
+        const remaining = this.getThreadComments(threadId);
+        if (deleted && remaining.length > 0 && container.isConnected) {
+          this.renderHoverContent(container, threadId, remaining, sourceEl);
+        }
+      });
+    });
+
+    const body = message.createDiv({ cls: "onc-comment-body onc-comment-message-body" });
+    this.renderCommentMarkdown(body, comment);
+  }
+
+  private renderReplyContent(container: HTMLElement, threadId: string, sourceEl: HTMLElement): void {
+    const comments = this.getThreadComments(threadId);
+    const primaryComment = comments[0] ?? null;
+    if (!primaryComment) {
+      this.renderHoverContent(container, threadId, comments, sourceEl);
+      return;
+    }
+
+    clearElement(container);
+
+    const header = container.createDiv({ cls: "onc-comment-header" });
+    header.createDiv({ cls: "onc-comment-style-name", text: "追加留言" });
+
+    const quote = container.createDiv({ cls: "onc-comment-quote" });
+    quote.setText(primaryComment.quote || sourceEl.innerText.trim());
+
+    const authorInput = this.renderAuthorInput(container, "");
+    const textarea = container.createEl("textarea", { cls: "onc-edit-textarea onc-bottom-edit-textarea" });
+    textarea.setAttribute("aria-label", "追加留言内容");
+    textarea.placeholder = "继续补充这个标记处的留言...";
+    textarea.rows = 3;
+
+    const actions = container.createDiv({ cls: "onc-comment-actions" });
+    const saveButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
+    saveButton.type = "button";
+    saveButton.setAttribute("aria-label", "保存追加留言");
+    saveButton.setAttribute("title", "保存追加留言");
+    setIcon(saveButton, "check");
+
+    const cancelButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
+    cancelButton.type = "button";
+    cancelButton.setAttribute("aria-label", "取消");
+    cancelButton.setAttribute("title", "取消");
+    setIcon(cancelButton, "x");
+
+    const submit = async (): Promise<void> => {
+      const saved = await this.addThreadReply(threadId, textarea.value, authorInput.value);
+      if (saved && container.isConnected) {
+        this.renderHoverContent(container, threadId, this.getThreadComments(threadId), sourceEl);
+      }
+    };
+
+    saveButton.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void submit();
+    });
+
+    cancelButton.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.renderHoverContent(container, threadId, this.getThreadComments(threadId), sourceEl);
+    });
+
+    textarea.addEventListener("input", () => {
+      this.autoResizeTextarea(textarea);
+    });
+
+    textarea.addEventListener("keydown", (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        void submit();
+      }
+    });
+
+    window.setTimeout(() => {
+      this.autoResizeTextarea(textarea);
+      textarea.focus();
+    }, 0);
   }
 
   private prepareRenderedMarks(root: HTMLElement): void {
@@ -777,11 +961,11 @@ export default class NotesCommentsPlugin extends Plugin {
         continue;
       }
 
-      const comment = this.getComment(id);
+      const comments = this.getThreadComments(id);
       mark.addClass("onc-comment-mark");
-      mark.setAttribute("data-onc-style", comment?.styleId ?? mark.getAttribute("data-onc-style") ?? this.settings.defaultStyleId);
+      mark.setAttribute("data-onc-style", this.getThreadStyleId(id, mark.getAttribute("data-onc-style") ?? this.settings.defaultStyleId));
       mark.setAttribute("tabindex", "0");
-      mark.setAttribute("aria-label", "有留言的标记");
+      mark.setAttribute("aria-label", comments.length > 1 ? `有 ${comments.length} 条留言的标记` : "有留言的标记");
     }
   }
 
@@ -805,7 +989,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
   private renderPanelEditContent(
     container: HTMLElement,
-    id: string,
+    threadId: string,
     comment: CommentRecord,
     sourceEl: HTMLElement
   ): void {
@@ -818,8 +1002,8 @@ export default class NotesCommentsPlugin extends Plugin {
     quote.setText(comment.quote);
 
     const styleRow = container.createDiv({ cls: "onc-edit-style-row" });
-    this.renderStylePicker(styleRow, comment.styleId, (styleId) => {
-      void this.updateCommentStyleFromEditPopover(id, styleId);
+    this.renderStylePicker(styleRow, this.getThreadStyleId(threadId, comment.styleId), (styleId) => {
+      void this.updateCommentThreadStyle(threadId, styleId);
     });
 
     const actions = styleRow.createDiv({ cls: "onc-edit-style-actions" });
@@ -853,7 +1037,7 @@ export default class NotesCommentsPlugin extends Plugin {
       event.preventDefault();
       event.stopPropagation();
       this.flushEditSave();
-      this.renderHoverContent(container, id, this.getComment(id), sourceEl);
+      this.renderHoverContent(container, threadId, this.getThreadComments(threadId), sourceEl);
     });
 
     window.setTimeout(() => {
@@ -870,9 +1054,10 @@ export default class NotesCommentsPlugin extends Plugin {
 
     clearElement(this.editPopoverEl);
 
+    const threadId = getCommentThreadId(comment);
     const styleRow = this.editPopoverEl.createDiv({ cls: "onc-edit-style-row" });
-    this.renderStylePicker(styleRow, comment.styleId, (styleId) => {
-      void this.updateCommentStyleFromEditPopover(comment.id, styleId);
+    this.renderStylePicker(styleRow, this.getThreadStyleId(threadId, comment.styleId), (styleId) => {
+      void this.updateCommentThreadStyle(threadId, styleId);
     });
 
     const authorInput = this.renderAuthorInput(this.editPopoverEl, comment.authorName);
@@ -973,6 +1158,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
     this.settings.comments.push({
       id,
+      threadId: id,
       filePath: draft.filePath,
       quote: draft.selectedText,
       comment,
@@ -986,6 +1172,37 @@ export default class NotesCommentsPlugin extends Plugin {
     await this.saveSettings();
     this.closeEditPopover();
     new Notice("已添加标记留言。");
+  }
+
+  private async addThreadReply(threadId: string, commentText: string, authorNameText: string): Promise<boolean> {
+    const comment = commentText.trim();
+    if (!comment) {
+      new Notice("留言内容不能为空。");
+      return false;
+    }
+
+    const primaryComment = this.getThreadPrimaryComment(threadId);
+    if (!primaryComment) {
+      new Notice("未找到这个标记的留言数据。");
+      return false;
+    }
+
+    const now = Date.now();
+    this.settings.comments.push({
+      id: createCommentId(),
+      threadId,
+      filePath: primaryComment.filePath,
+      quote: primaryComment.quote,
+      comment,
+      authorName: resolveCommenterName(authorNameText, this.settings.commenterName),
+      styleId: this.getThreadStyleId(threadId, primaryComment.styleId),
+      createdAt: now,
+      updatedAt: now
+    });
+
+    await this.saveSettings();
+    new Notice("已追加留言。");
+    return true;
   }
 
   private renderAuthorInput(parentEl: HTMLElement, value: string): HTMLInputElement {
@@ -1073,23 +1290,28 @@ export default class NotesCommentsPlugin extends Plugin {
     };
   }
 
-  private async updateCommentStyleFromEditPopover(id: string, styleId: string): Promise<void> {
-    const comment = this.getComment(id);
-    if (!comment) {
+  private async updateCommentThreadStyle(threadId: string, styleId: string): Promise<void> {
+    const comments = this.getThreadComments(threadId);
+    const primaryComment = comments[0];
+    if (!primaryComment) {
       return;
     }
 
     const nextStyleId = this.getStyle(styleId).id;
-    if (comment.styleId === nextStyleId) {
+    if (comments.every((comment) => comment.styleId === nextStyleId)) {
       return;
     }
 
-    comment.styleId = nextStyleId;
-    comment.updatedAt = Date.now();
-    this.updateVisibleMarkStyle(id, nextStyleId);
+    const now = Date.now();
+    for (const comment of comments) {
+      comment.styleId = nextStyleId;
+      comment.updatedAt = now;
+    }
+
+    this.updateVisibleMarkStyle(threadId, nextStyleId);
     await this.rewriteCommentMarkup((markdown) => {
-      return updateCommentSpanStyle(markdown, id, nextStyleId);
-    }, comment.filePath);
+      return updateCommentSpanStyle(markdown, threadId, nextStyleId);
+    }, primaryComment.filePath);
     await this.saveSettings();
   }
 
@@ -1250,7 +1472,7 @@ export default class NotesCommentsPlugin extends Plugin {
     this.closeStylePickers();
     this.editAnchorEl = null;
     this.createAnchorRange = null;
-    this.activeEditCommentId = null;
+    this.activeEditThreadId = null;
     this.editPopoverEl?.removeClass("onc-visible");
   }
 
@@ -1286,8 +1508,8 @@ export default class NotesCommentsPlugin extends Plugin {
       return;
     }
 
-    if ((!this.editAnchorEl || !this.editAnchorEl.isConnected) && this.activeEditCommentId) {
-      this.editAnchorEl = this.findVisibleMarkElement(this.activeEditCommentId);
+    if ((!this.editAnchorEl || !this.editAnchorEl.isConnected) && this.activeEditThreadId) {
+      this.editAnchorEl = this.findVisibleMarkElement(this.activeEditThreadId);
     }
 
     if (this.editAnchorEl && this.editAnchorEl.isConnected && isElementInViewport(this.editAnchorEl)) {
@@ -1617,8 +1839,8 @@ function buildCommentDecorations(view: EditorView, plugin: NotesCommentsPlugin):
       continue;
     }
 
-    const comment = plugin.getComment(span.id);
-    const styleId = comment?.styleId ?? span.styleId ?? plugin.settings.defaultStyleId;
+    const styleId = plugin.getThreadStyleId(span.id, span.styleId ?? plugin.settings.defaultStyleId);
+    const commentCount = plugin.getThreadComments(span.id).length;
     builder.add(
       span.contentFrom,
       span.contentTo,
@@ -1627,7 +1849,7 @@ function buildCommentDecorations(view: EditorView, plugin: NotesCommentsPlugin):
         attributes: {
           "data-onc-id": span.id,
           "data-onc-style": styleId,
-          "aria-label": "有留言的标记"
+          "aria-label": commentCount > 1 ? `有 ${commentCount} 条留言的标记` : "有留言的标记"
         }
       })
     );
@@ -1785,6 +2007,7 @@ function normalizeComments(
     .filter((comment) => typeof comment.id === "string" && typeof comment.comment === "string")
     .map((comment) => ({
       id: comment.id,
+      threadId: getCommentThreadId(comment),
       filePath: comment.filePath ?? "",
       quote: comment.quote ?? "",
       comment: comment.comment,
@@ -1793,6 +2016,10 @@ function normalizeComments(
       createdAt: comment.createdAt ?? Date.now(),
       updatedAt: comment.updatedAt ?? comment.createdAt ?? Date.now()
     }));
+}
+
+function getCommentThreadId(comment: CommentRecord): string {
+  return typeof comment.threadId === "string" && comment.threadId.trim() ? comment.threadId : comment.id;
 }
 
 function cloneStyles(styles: HighlightStyle[]): HighlightStyle[] {
