@@ -68,6 +68,11 @@ interface CreateCommentDraft {
   to: EditorPosition;
 }
 
+interface StylePickerControl {
+  getValue: () => string;
+  close: () => void;
+}
+
 type RegisterEditorMenuEvent = (
   name: "editor-menu",
   callback: (menu: Menu, editor: Editor, view: MarkdownView) => void
@@ -518,6 +523,9 @@ export default class NotesCommentsPlugin extends Plugin {
       }
 
       if (this.editPopoverEl.contains(target)) {
+        if (!(target instanceof Element) || !target.closest(".onc-style-picker")) {
+          this.closeStylePickers();
+        }
         return;
       }
 
@@ -723,19 +731,8 @@ export default class NotesCommentsPlugin extends Plugin {
     clearElement(this.editPopoverEl);
 
     const styleRow = this.editPopoverEl.createDiv({ cls: "onc-edit-style-row" });
-    const styleSelect = styleRow.createEl("select", { cls: "onc-edit-style-select" });
-    styleSelect.setAttribute("aria-label", "标记样式");
-
-    for (const style of this.settings.styles) {
-      const option = styleSelect.createEl("option", {
-        text: style.name,
-        value: style.id
-      });
-      option.selected = style.id === comment.styleId;
-    }
-
-    styleSelect.addEventListener("change", () => {
-      void this.updateCommentStyleFromEditPopover(comment.id, styleSelect.value);
+    this.renderStylePicker(styleRow, comment.styleId, (styleId) => {
+      void this.updateCommentStyleFromEditPopover(comment.id, styleId);
     });
 
     const textarea = this.editPopoverEl.createEl("textarea", { cls: "onc-edit-textarea" });
@@ -760,16 +757,9 @@ export default class NotesCommentsPlugin extends Plugin {
     clearElement(this.editPopoverEl);
 
     const styleRow = this.editPopoverEl.createDiv({ cls: "onc-edit-style-row" });
-    const styleSelect = styleRow.createEl("select", { cls: "onc-edit-style-select" });
-    styleSelect.setAttribute("aria-label", "标记样式");
-
-    for (const style of this.settings.styles) {
-      const option = styleSelect.createEl("option", {
-        text: style.name,
-        value: style.id
-      });
-      option.selected = style.id === this.settings.defaultStyleId;
-    }
+    const stylePicker = this.renderStylePicker(styleRow, this.settings.defaultStyleId, () => {
+      // New comments read the selected style when the user confirms the draft.
+    });
 
     const actions = styleRow.createDiv({ cls: "onc-edit-style-actions" });
     const saveButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
@@ -790,7 +780,7 @@ export default class NotesCommentsPlugin extends Plugin {
     textarea.rows = 3;
 
     const submit = async (): Promise<void> => {
-      await this.createCommentFromDraft(draft, textarea.value, styleSelect.value);
+      await this.createCommentFromDraft(draft, textarea.value, stylePicker.getValue());
     };
 
     saveButton.addEventListener("click", (event: MouseEvent) => {
@@ -842,6 +832,82 @@ export default class NotesCommentsPlugin extends Plugin {
     await this.saveSettings();
     this.closeEditPopover();
     new Notice("已添加标记留言。");
+  }
+
+  private renderStylePicker(
+    parentEl: HTMLElement,
+    selectedStyleId: string,
+    onChange: (styleId: string) => void
+  ): StylePickerControl {
+    let currentStyleId = this.getStyle(selectedStyleId).id;
+    const wrapper = parentEl.createDiv({ cls: "onc-style-picker" });
+    const trigger = wrapper.createEl("button", { cls: "onc-style-picker-trigger" });
+    trigger.type = "button";
+    trigger.setAttribute("aria-label", "标记样式");
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+
+    const swatch = trigger.createSpan({ cls: "onc-style-picker-swatch" });
+    const label = trigger.createSpan({ cls: "onc-style-picker-label" });
+    const chevron = trigger.createSpan({ cls: "onc-style-picker-chevron" });
+    setIcon(chevron, "chevron-down");
+
+    const menu = wrapper.createDiv({ cls: "onc-style-picker-menu" });
+    menu.setAttribute("role", "listbox");
+
+    const close = (): void => {
+      wrapper.removeClass("onc-open");
+      trigger.setAttribute("aria-expanded", "false");
+    };
+
+    const updateTrigger = (): void => {
+      const style = this.getStyle(currentStyleId);
+      label.setText(style.name);
+      swatch.style.backgroundColor = style.backgroundColor;
+      swatch.style.borderColor = style.underlineColor;
+      const options = menu.querySelectorAll<HTMLElement>(".onc-style-picker-option");
+      for (const option of Array.from(options)) {
+        option.toggleClass("is-selected", option.dataset.styleId === currentStyleId);
+        option.setAttribute("aria-selected", option.dataset.styleId === currentStyleId ? "true" : "false");
+      }
+    };
+
+    for (const style of this.settings.styles) {
+      const option = menu.createEl("button", { cls: "onc-style-picker-option" });
+      option.type = "button";
+      option.dataset.styleId = style.id;
+      option.setAttribute("role", "option");
+
+      const optionSwatch = option.createSpan({ cls: "onc-style-picker-swatch" });
+      optionSwatch.style.backgroundColor = style.backgroundColor;
+      optionSwatch.style.borderColor = style.underlineColor;
+      option.createSpan({ cls: "onc-style-picker-option-label", text: style.name });
+
+      option.addEventListener("click", (event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        currentStyleId = style.id;
+        updateTrigger();
+        close();
+        onChange(currentStyleId);
+      });
+    }
+
+    trigger.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const shouldOpen = !wrapper.hasClass("onc-open");
+      this.closeStylePickers();
+      wrapper.toggleClass("onc-open", shouldOpen);
+      trigger.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    });
+
+    updateTrigger();
+
+    return {
+      getValue: () => currentStyleId,
+      close
+    };
   }
 
   private async updateCommentStyleFromEditPopover(id: string, styleId: string): Promise<void> {
@@ -915,6 +981,14 @@ export default class NotesCommentsPlugin extends Plugin {
     window.clearTimeout(this.editSaveTimer);
     this.editSaveTimer = null;
     void this.saveSettings();
+  }
+
+  private closeStylePickers(): void {
+    const pickers = this.editPopoverEl?.querySelectorAll<HTMLElement>(".onc-style-picker.onc-open") ?? [];
+    for (const picker of Array.from(pickers)) {
+      picker.removeClass("onc-open");
+      picker.querySelector("button")?.setAttribute("aria-expanded", "false");
+    }
   }
 
   private refreshDynamicStyles(): void {
@@ -1004,6 +1078,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
   private closeEditPopover(): void {
     this.flushEditSave();
+    this.closeStylePickers();
     this.editAnchorEl = null;
     this.createAnchorRange = null;
     this.activeEditCommentId = null;
