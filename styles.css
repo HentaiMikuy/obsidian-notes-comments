@@ -117,6 +117,11 @@
   gap: 4px;
 }
 
+.onc-author-input {
+  margin-bottom: 8px;
+  width: 100%;
+}
+
 .onc-style-picker {
   flex: 1 1 auto;
   min-width: 0;

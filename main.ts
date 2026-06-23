@@ -40,6 +40,7 @@ interface CommentRecord {
   filePath: string;
   quote: string;
   comment: string;
+  authorName: string;
   styleId: string;
   createdAt: number;
   updatedAt: number;
@@ -48,6 +49,7 @@ interface CommentRecord {
 interface NotesCommentsSettings {
   displayMode: CommentDisplayMode;
   defaultStyleId: string;
+  commenterName: string;
   styles: HighlightStyle[];
   comments: CommentRecord[];
 }
@@ -119,6 +121,7 @@ const DEFAULT_STYLES: HighlightStyle[] = [
 const DEFAULT_SETTINGS: NotesCommentsSettings = {
   displayMode: "bottom-sheet",
   defaultStyleId: DEFAULT_STYLE_ID,
+  commenterName: "Note Taker",
   styles: cloneStyles(DEFAULT_STYLES),
   comments: []
 };
@@ -236,12 +239,14 @@ export default class NotesCommentsPlugin extends Plugin {
       loadedDefaultStyleId && styles.some((style) => style.id === loadedDefaultStyleId)
         ? loadedDefaultStyleId
         : fallbackStyleId;
+    const commenterName = normalizeCommenterName(loaded?.commenterName);
 
     this.settings = {
       displayMode: normalizeDisplayMode(loaded?.displayMode),
       defaultStyleId,
+      commenterName,
       styles,
-      comments: normalizeComments(loaded?.comments, defaultStyleId)
+      comments: normalizeComments(loaded?.comments, defaultStyleId, commenterName)
     };
   }
 
@@ -261,6 +266,10 @@ export default class NotesCommentsPlugin extends Plugin {
       this.settings.styles[0] ??
       DEFAULT_STYLES[0]
     );
+  }
+
+  getCommentAuthorName(comment: CommentRecord): string {
+    return resolveCommenterName(comment.authorName, this.settings.commenterName);
   }
 
   async addCustomStyle(): Promise<void> {
@@ -697,10 +706,8 @@ export default class NotesCommentsPlugin extends Plugin {
   ): void {
     clearElement(container);
 
-    const style = this.getStyle(comment?.styleId ?? sourceEl.getAttribute("data-onc-style"));
-
     const header = container.createDiv({ cls: "onc-comment-header" });
-    header.createDiv({ cls: "onc-comment-style-name", text: style.name });
+    header.createDiv({ cls: "onc-comment-style-name", text: comment ? this.getCommentAuthorName(comment) : "未知备注" });
     if (comment) {
       header.createDiv({
         cls: "onc-comment-time",
@@ -815,6 +822,7 @@ export default class NotesCommentsPlugin extends Plugin {
     doneButton.setAttribute("title", "完成编辑");
     setIcon(doneButton, "check");
 
+    const authorInput = this.renderAuthorInput(container, comment.authorName);
     const textarea = container.createEl("textarea", { cls: "onc-edit-textarea onc-bottom-edit-textarea" });
     textarea.setAttribute("aria-label", "留言内容");
     textarea.placeholder = "写下你的留言或补充说明...";
@@ -825,6 +833,12 @@ export default class NotesCommentsPlugin extends Plugin {
       comment.comment = textarea.value;
       comment.updatedAt = Date.now();
       this.autoResizeTextarea(textarea);
+      this.scheduleEditSave();
+    });
+
+    authorInput.addEventListener("input", () => {
+      comment.authorName = resolveCommenterName(authorInput.value, this.settings.commenterName);
+      comment.updatedAt = Date.now();
       this.scheduleEditSave();
     });
 
@@ -854,6 +868,7 @@ export default class NotesCommentsPlugin extends Plugin {
       void this.updateCommentStyleFromEditPopover(comment.id, styleId);
     });
 
+    const authorInput = this.renderAuthorInput(this.editPopoverEl, comment.authorName);
     const textarea = this.editPopoverEl.createEl("textarea", { cls: "onc-edit-textarea" });
     textarea.setAttribute("aria-label", "留言内容");
     textarea.placeholder = "写下你的留言或补充说明...";
@@ -864,6 +879,12 @@ export default class NotesCommentsPlugin extends Plugin {
       comment.comment = textarea.value;
       comment.updatedAt = Date.now();
       this.autoResizeTextarea(textarea);
+      this.scheduleEditSave();
+    });
+
+    authorInput.addEventListener("input", () => {
+      comment.authorName = resolveCommenterName(authorInput.value, this.settings.commenterName);
+      comment.updatedAt = Date.now();
       this.scheduleEditSave();
     });
   }
@@ -893,13 +914,14 @@ export default class NotesCommentsPlugin extends Plugin {
     cancelButton.setAttribute("title", "取消");
     setIcon(cancelButton, "x");
 
+    const authorInput = this.renderAuthorInput(this.editPopoverEl, "");
     const textarea = this.editPopoverEl.createEl("textarea", { cls: "onc-edit-textarea" });
     textarea.setAttribute("aria-label", "留言内容");
     textarea.placeholder = "写下你的留言或补充说明...";
     textarea.rows = 3;
 
     const submit = async (): Promise<void> => {
-      await this.createCommentFromDraft(draft, textarea.value, stylePicker.getValue());
+      await this.createCommentFromDraft(draft, textarea.value, stylePicker.getValue(), authorInput.value);
     };
 
     saveButton.addEventListener("click", (event: MouseEvent) => {
@@ -926,7 +948,12 @@ export default class NotesCommentsPlugin extends Plugin {
     });
   }
 
-  private async createCommentFromDraft(draft: CreateCommentDraft, commentText: string, styleId: string): Promise<void> {
+  private async createCommentFromDraft(
+    draft: CreateCommentDraft,
+    commentText: string,
+    styleId: string,
+    authorNameText: string
+  ): Promise<void> {
     const comment = commentText.trim();
     if (!comment) {
       new Notice("留言内容不能为空。");
@@ -942,6 +969,7 @@ export default class NotesCommentsPlugin extends Plugin {
       filePath: draft.filePath,
       quote: draft.selectedText,
       comment,
+      authorName: resolveCommenterName(authorNameText, this.settings.commenterName),
       styleId: resolvedStyleId,
       createdAt: now,
       updatedAt: now
@@ -951,6 +979,15 @@ export default class NotesCommentsPlugin extends Plugin {
     await this.saveSettings();
     this.closeEditPopover();
     new Notice("已添加标记留言。");
+  }
+
+  private renderAuthorInput(parentEl: HTMLElement, value: string): HTMLInputElement {
+    const input = parentEl.createEl("input", { cls: "onc-author-input" });
+    input.type = "text";
+    input.setAttribute("aria-label", "备注人名称");
+    input.placeholder = `备注人：${this.settings.commenterName}`;
+    input.value = value;
+    return input;
   }
 
   private renderStylePicker(
@@ -1309,6 +1346,19 @@ class NotesCommentsSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("默认备注人名称")
+      .setDesc("新增或编辑留言时，如果备注人名称留空，就使用这个名称。")
+      .addText((text) => {
+        text
+          .setPlaceholder("Note Taker")
+          .setValue(this.plugin.settings.commenterName)
+          .onChange(async (value) => {
+            this.plugin.settings.commenterName = normalizeCommenterName(value);
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
       .setName("默认标记样式")
       .setDesc("新增标记留言时默认使用的样式。")
       .addDropdown((dropdown) => {
@@ -1591,6 +1641,14 @@ function normalizeDisplayMode(value: unknown): CommentDisplayMode {
   return "bottom-sheet";
 }
 
+function normalizeCommenterName(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "Note Taker";
+}
+
+function resolveCommenterName(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : normalizeCommenterName(fallback);
+}
+
 function normalizeStyles(styles: HighlightStyle[] | undefined): HighlightStyle[] {
   const source = Array.isArray(styles) && styles.length > 0 ? styles : DEFAULT_STYLES;
   const normalized = source
@@ -1607,7 +1665,11 @@ function normalizeStyles(styles: HighlightStyle[] | undefined): HighlightStyle[]
   return normalized.length > 0 ? normalized : cloneStyles(DEFAULT_STYLES);
 }
 
-function normalizeComments(comments: CommentRecord[] | undefined, defaultStyleId: string): CommentRecord[] {
+function normalizeComments(
+  comments: CommentRecord[] | undefined,
+  defaultStyleId: string,
+  defaultCommenterName: string
+): CommentRecord[] {
   if (!Array.isArray(comments)) {
     return [];
   }
@@ -1619,6 +1681,7 @@ function normalizeComments(comments: CommentRecord[] | undefined, defaultStyleId
       filePath: comment.filePath ?? "",
       quote: comment.quote ?? "",
       comment: comment.comment,
+      authorName: resolveCommenterName(comment.authorName, defaultCommenterName),
       styleId: comment.styleId ?? defaultStyleId,
       createdAt: comment.createdAt ?? Date.now(),
       updatedAt: comment.updatedAt ?? comment.createdAt ?? Date.now()
