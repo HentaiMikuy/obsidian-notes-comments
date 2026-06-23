@@ -1,9 +1,11 @@
 import {
   App,
   Editor,
+  EditorPosition,
+  EventRef,
+  MarkdownFileInfo,
   MarkdownView,
   Menu,
-  Modal,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -49,18 +51,6 @@ interface NotesCommentsSettings {
   comments: CommentRecord[];
 }
 
-interface CommentModalInput {
-  quote: string;
-  comment: string;
-  styleId: string;
-  submitLabel: string;
-}
-
-interface CommentModalResult {
-  comment: string;
-  styleId: string;
-}
-
 interface CommentSpanMatch {
   id: string;
   styleId: string | null;
@@ -68,8 +58,20 @@ interface CommentSpanMatch {
   to: number;
   contentFrom: number;
   contentTo: number;
-  inner: string;
 }
+
+interface CreateCommentDraft {
+  editor: Editor;
+  filePath: string;
+  selectedText: string;
+  from: EditorPosition;
+  to: EditorPosition;
+}
+
+type RegisterEditorMenuEvent = (
+  name: "editor-menu",
+  callback: (menu: Menu, editor: Editor, view: MarkdownView) => void
+) => EventRef;
 
 const DEFAULT_STYLE_ID = "yellow-marker";
 
@@ -138,8 +140,8 @@ export default class NotesCommentsPlugin extends Plugin {
     this.addCommand({
       id: "add-highlight-comment",
       name: "添加标记留言",
-      editorCallback: (editor: Editor, view: MarkdownView) => {
-        this.openCreateCommentModal(editor, view);
+      editorCallback: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+        this.openCreateCommentPopover(editor, ctx);
       }
     });
 
@@ -163,15 +165,17 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private registerEditorContextMenu(): void {
+    const onEditorMenu = this.app.workspace.on.bind(this.app.workspace) as unknown as RegisterEditorMenuEvent;
+
     this.registerEvent(
-      this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
+      onEditorMenu("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
         if (editor.getSelection().trim()) {
           menu.addItem((item) => {
             item
               .setTitle("添加标记留言")
               .setIcon("message-square-plus")
               .onClick(() => {
-                this.openCreateCommentModal(editor, view);
+                this.openCreateCommentPopover(editor, view);
               });
           });
         }
@@ -299,7 +303,7 @@ export default class NotesCommentsPlugin extends Plugin {
     await this.saveSettings();
   }
 
-  openCreateCommentModal(editor: Editor, view: MarkdownView): void {
+  openCreateCommentPopover(editor: Editor, view: MarkdownView | MarkdownFileInfo): void {
     const selectedText = editor.getSelection();
     if (!selectedText.trim()) {
       new Notice("请先选中需要标记的文字。");
@@ -317,35 +321,38 @@ export default class NotesCommentsPlugin extends Plugin {
       return;
     }
 
-    new HighlightCommentModal(
-      this.app,
-      this,
-      {
-        quote: selectedText,
-        comment: "",
-        styleId: this.settings.defaultStyleId,
-        submitLabel: "添加"
-      },
-      async (result: CommentModalResult) => {
-        const id = createCommentId();
-        const now = Date.now();
-        const styleId = this.getStyle(result.styleId).id;
+    const draft: CreateCommentDraft = {
+      editor,
+      filePath,
+      selectedText,
+      from: editor.getCursor("from"),
+      to: editor.getCursor("to")
+    };
+    const selectionRect = this.getSelectionRect();
 
-        this.settings.comments.push({
-          id,
-          filePath,
-          quote: selectedText,
-          comment: result.comment.trim(),
-          styleId,
-          createdAt: now,
-          updatedAt: now
-        });
+    if (!this.editPopoverEl) {
+      return;
+    }
 
-        editor.replaceSelection(buildCommentMarkup(selectedText, id, styleId));
-        await this.saveSettings();
-        new Notice("已添加标记留言。");
+    this.closeEditPopover();
+    this.hideHoverSurfaces();
+    this.renderCreatePopover(draft);
+    this.editPopoverEl.addClass("onc-visible");
+
+    if (selectionRect) {
+      this.positionFloatingElementAtRect(this.editPopoverEl, selectionRect, 10);
+    } else {
+      this.positionEditPopoverAtCenter();
+    }
+
+    const textarea = this.editPopoverEl.querySelector<HTMLTextAreaElement>(".onc-edit-textarea");
+    window.setTimeout(() => {
+      if (!textarea) {
+        return;
       }
-    ).open();
+      this.autoResizeTextarea(textarea);
+      textarea.focus();
+    }, 0);
   }
 
   openEditCommentAtCursor(editor: Editor): void {
@@ -370,42 +377,6 @@ export default class NotesCommentsPlugin extends Plugin {
     }
 
     await this.deleteComment(span.id, true);
-  }
-
-  openEditCommentModal(id: string): void {
-    const comment = this.getComment(id);
-    if (!comment) {
-      new Notice("未找到这条留言的数据。");
-      return;
-    }
-
-    new HighlightCommentModal(
-      this.app,
-      this,
-      {
-        quote: comment.quote,
-        comment: comment.comment,
-        styleId: comment.styleId,
-        submitLabel: "保存"
-      },
-      async (result: CommentModalResult) => {
-        const oldStyleId = comment.styleId;
-        const styleId = this.getStyle(result.styleId).id;
-        comment.comment = result.comment.trim();
-        comment.styleId = styleId;
-        comment.updatedAt = Date.now();
-
-        if (oldStyleId !== styleId) {
-          await this.rewriteCommentMarkup(id, (markdown) => {
-            return updateCommentSpanStyle(markdown, id, styleId);
-          }, comment.filePath);
-        }
-
-        await this.saveSettings();
-        this.hideHoverSurfaces();
-        new Notice("已更新标记留言。");
-      }
-    ).open();
   }
 
   openEditCommentPopover(id: string, sourceEl?: HTMLElement | null): void {
@@ -447,7 +418,7 @@ export default class NotesCommentsPlugin extends Plugin {
     let markupChanged = false;
 
     if (unwrapMarkup) {
-      markupChanged = await this.rewriteCommentMarkup(id, (markdown) => unwrapCommentMarkup(markdown, id), filePath);
+      markupChanged = await this.rewriteCommentMarkup((markdown) => unwrapCommentMarkup(markdown, id), filePath);
     }
 
     this.settings.comments = this.settings.comments.filter((record) => record.id !== id);
@@ -605,6 +576,10 @@ export default class NotesCommentsPlugin extends Plugin {
 
   private positionFloatingElement(floatingEl: HTMLElement, sourceEl: HTMLElement, gap: number): void {
     const rect = sourceEl.getBoundingClientRect();
+    this.positionFloatingElementAtRect(floatingEl, rect, gap);
+  }
+
+  private positionFloatingElementAtRect(floatingEl: HTMLElement, rect: DOMRect, gap: number): void {
     const popover = floatingEl;
     const margin = 12;
     const viewportWidth = window.innerWidth;
@@ -751,6 +726,98 @@ export default class NotesCommentsPlugin extends Plugin {
     });
   }
 
+  private renderCreatePopover(draft: CreateCommentDraft): void {
+    if (!this.editPopoverEl) {
+      return;
+    }
+
+    clearElement(this.editPopoverEl);
+
+    const styleRow = this.editPopoverEl.createDiv({ cls: "onc-edit-style-row" });
+    const styleSelect = styleRow.createEl("select", { cls: "onc-edit-style-select" });
+    styleSelect.setAttribute("aria-label", "标记样式");
+
+    for (const style of this.settings.styles) {
+      const option = styleSelect.createEl("option", {
+        text: style.name,
+        value: style.id
+      });
+      option.selected = style.id === this.settings.defaultStyleId;
+    }
+
+    const actions = styleRow.createDiv({ cls: "onc-edit-style-actions" });
+    const saveButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
+    saveButton.type = "button";
+    saveButton.setAttribute("aria-label", "添加标记留言");
+    saveButton.setAttribute("title", "添加标记留言");
+    setIcon(saveButton, "check");
+
+    const cancelButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
+    cancelButton.type = "button";
+    cancelButton.setAttribute("aria-label", "取消");
+    cancelButton.setAttribute("title", "取消");
+    setIcon(cancelButton, "x");
+
+    const textarea = this.editPopoverEl.createEl("textarea", { cls: "onc-edit-textarea" });
+    textarea.setAttribute("aria-label", "留言内容");
+    textarea.placeholder = "写下你的留言或补充说明...";
+    textarea.rows = 3;
+
+    const submit = async (): Promise<void> => {
+      await this.createCommentFromDraft(draft, textarea.value, styleSelect.value);
+    };
+
+    saveButton.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void submit();
+    });
+
+    cancelButton.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeEditPopover();
+    });
+
+    textarea.addEventListener("input", () => {
+      this.autoResizeTextarea(textarea);
+    });
+
+    textarea.addEventListener("keydown", (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        void submit();
+      }
+    });
+  }
+
+  private async createCommentFromDraft(draft: CreateCommentDraft, commentText: string, styleId: string): Promise<void> {
+    const comment = commentText.trim();
+    if (!comment) {
+      new Notice("留言内容不能为空。");
+      return;
+    }
+
+    const id = createCommentId();
+    const now = Date.now();
+    const resolvedStyleId = this.getStyle(styleId).id;
+
+    this.settings.comments.push({
+      id,
+      filePath: draft.filePath,
+      quote: draft.selectedText,
+      comment,
+      styleId: resolvedStyleId,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    draft.editor.replaceRange(buildCommentMarkup(draft.selectedText, id, resolvedStyleId), draft.from, draft.to);
+    await this.saveSettings();
+    this.closeEditPopover();
+    new Notice("已添加标记留言。");
+  }
+
   private async updateCommentStyleFromEditPopover(id: string, styleId: string): Promise<void> {
     const comment = this.getComment(id);
     if (!comment) {
@@ -765,7 +832,7 @@ export default class NotesCommentsPlugin extends Plugin {
     comment.styleId = nextStyleId;
     comment.updatedAt = Date.now();
     this.updateVisibleMarkStyle(id, nextStyleId);
-    await this.rewriteCommentMarkup(id, (markdown) => {
+    await this.rewriteCommentMarkup((markdown) => {
       return updateCommentSpanStyle(markdown, id, nextStyleId);
     }, comment.filePath);
     await this.saveSettings();
@@ -782,6 +849,18 @@ export default class NotesCommentsPlugin extends Plugin {
   private findVisibleMarkElement(id: string): HTMLElement | null {
     const selector = `.onc-comment-mark[data-onc-id="${cssAttributeValue(id)}"]`;
     return this.app.workspace.containerEl.querySelector<HTMLElement>(selector) ?? document.querySelector<HTMLElement>(selector);
+  }
+
+  private getSelectionRect(): DOMRect | null {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      if (rect.width > 0 || rect.height > 0) {
+        return rect;
+      }
+    }
+
+    return null;
   }
 
   private autoResizeTextarea(textarea: HTMLTextAreaElement): void {
@@ -842,7 +921,6 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private async rewriteCommentMarkup(
-    id: string,
     rewrite: (markdown: string) => string,
     filePath?: string
   ): Promise<boolean> {
@@ -919,98 +997,6 @@ export default class NotesCommentsPlugin extends Plugin {
 
   private isInsideHoverSurface(node: Node): boolean {
     return Boolean(this.bottomSheetEl?.contains(node) || this.inlinePopoverEl?.contains(node));
-  }
-}
-
-class HighlightCommentModal extends Modal {
-  private readonly plugin: NotesCommentsPlugin;
-  private readonly input: CommentModalInput;
-  private readonly onSubmit: (result: CommentModalResult) => Promise<void>;
-
-  constructor(
-    app: App,
-    plugin: NotesCommentsPlugin,
-    input: CommentModalInput,
-    onSubmit: (result: CommentModalResult) => Promise<void>
-  ) {
-    super(app);
-    this.plugin = plugin;
-    this.input = { ...input };
-    this.onSubmit = onSubmit;
-  }
-
-  onOpen(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("onc-comment-modal");
-
-    contentEl.createEl("h2", { text: this.input.submitLabel === "添加" ? "添加标记留言" : "编辑标记留言" });
-
-    const quote = contentEl.createDiv({ cls: "onc-modal-quote" });
-    quote.setText(this.input.quote);
-
-    new Setting(contentEl)
-      .setName("标记样式")
-      .addDropdown((dropdown) => {
-        for (const style of this.plugin.settings.styles) {
-          dropdown.addOption(style.id, style.name);
-        }
-        dropdown.setValue(this.plugin.getStyle(this.input.styleId).id);
-        dropdown.onChange((value) => {
-          this.input.styleId = value;
-        });
-      });
-
-    let textareaEl: HTMLTextAreaElement | null = null;
-    new Setting(contentEl)
-      .setName("留言 / Note")
-      .setDesc("这段内容会在鼠标移动到标记处时展示。")
-      .addTextArea((textArea) => {
-        textArea.setValue(this.input.comment);
-        textArea.setPlaceholder("写下你的留言或补充说明...");
-        textArea.inputEl.rows = 6;
-        textArea.inputEl.addClass("onc-comment-modal-textarea");
-        textareaEl = textArea.inputEl;
-        textArea.onChange((value) => {
-          this.input.comment = value;
-        });
-      });
-
-    const buttonRow = contentEl.createDiv({ cls: "onc-modal-actions" });
-    const cancelButton = buttonRow.createEl("button", { text: "取消" });
-    cancelButton.type = "button";
-    cancelButton.addEventListener("click", () => {
-      this.close();
-    });
-
-    const submitButton = buttonRow.createEl("button", {
-      cls: "mod-cta",
-      text: this.input.submitLabel
-    });
-    submitButton.type = "button";
-    submitButton.addEventListener("click", () => {
-      void this.submit();
-    });
-
-    window.setTimeout(() => textareaEl?.focus(), 0);
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-
-  private async submit(): Promise<void> {
-    const comment = this.input.comment.trim();
-    if (!comment) {
-      new Notice("留言内容不能为空。");
-      return;
-    }
-
-    await this.onSubmit({
-      comment,
-      styleId: this.plugin.getStyle(this.input.styleId).id
-    });
-    this.close();
   }
 }
 
@@ -1235,8 +1221,7 @@ function findAllCommentSpans(markdown: string): CommentSpanMatch[] {
         from,
         to,
         contentFrom: from + openingTagEnd,
-        contentTo: from + closingTagStart,
-        inner: match[2] ?? ""
+        contentTo: from + closingTagStart
       });
     }
 
