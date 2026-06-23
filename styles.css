@@ -189,6 +189,10 @@
   width: 100%;
 }
 
+.onc-bottom-edit-textarea {
+  margin-top: 8px;
+}
+
 .onc-comment-header {
   align-items: center;
   display: flex;

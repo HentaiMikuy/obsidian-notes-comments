@@ -514,7 +514,9 @@ export default class NotesCommentsPlugin extends Plugin {
     });
 
     this.registerDomEvent(document, "pointerdown", (event: PointerEvent) => {
-      if (!this.editPopoverEl?.hasClass("onc-visible")) {
+      const editPopoverVisible = this.editPopoverEl?.hasClass("onc-visible") ?? false;
+      const bottomSheetVisible = this.bottomSheetEl?.hasClass("onc-visible") ?? false;
+      if (!editPopoverVisible && !bottomSheetVisible) {
         return;
       }
 
@@ -523,7 +525,14 @@ export default class NotesCommentsPlugin extends Plugin {
         return;
       }
 
-      if (this.editPopoverEl.contains(target)) {
+      if (this.editPopoverEl?.contains(target)) {
+        if (!(target instanceof Element) || !target.closest(".onc-style-picker")) {
+          this.closeStylePickers();
+        }
+        return;
+      }
+
+      if (this.bottomSheetEl?.hasClass("onc-visible") && this.bottomSheetEl.contains(target)) {
         if (!(target instanceof Element) || !target.closest(".onc-style-picker")) {
           this.closeStylePickers();
         }
@@ -687,7 +696,11 @@ export default class NotesCommentsPlugin extends Plugin {
       editButton.addEventListener("click", (event: MouseEvent) => {
         event.preventDefault();
         event.stopPropagation();
-        this.openEditCommentPopover(id, sourceEl);
+        if (container === this.bottomSheetEl && this.settings.displayMode === "bottom-sheet") {
+          this.renderBottomSheetEditContent(container, id, comment, sourceEl);
+        } else {
+          this.openEditCommentPopover(id, sourceEl);
+        }
       });
     }
 
@@ -740,6 +753,59 @@ export default class NotesCommentsPlugin extends Plugin {
 
     container.addClass("markdown-rendered");
     void MarkdownRenderer.render(this.app, markdown, container, comment.filePath, this);
+  }
+
+  private renderBottomSheetEditContent(
+    container: HTMLElement,
+    id: string,
+    comment: CommentRecord,
+    sourceEl: HTMLElement
+  ): void {
+    clearElement(container);
+
+    const header = container.createDiv({ cls: "onc-comment-header" });
+    header.createDiv({ cls: "onc-comment-style-name", text: "编辑留言" });
+
+    const quote = container.createDiv({ cls: "onc-comment-quote" });
+    quote.setText(comment.quote);
+
+    const styleRow = container.createDiv({ cls: "onc-edit-style-row" });
+    this.renderStylePicker(styleRow, comment.styleId, (styleId) => {
+      void this.updateCommentStyleFromEditPopover(id, styleId);
+    });
+
+    const actions = styleRow.createDiv({ cls: "onc-edit-style-actions" });
+    const doneButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
+    doneButton.type = "button";
+    doneButton.setAttribute("aria-label", "完成编辑");
+    doneButton.setAttribute("title", "完成编辑");
+    setIcon(doneButton, "check");
+
+    const textarea = container.createEl("textarea", { cls: "onc-edit-textarea onc-bottom-edit-textarea" });
+    textarea.setAttribute("aria-label", "留言内容");
+    textarea.placeholder = "写下你的留言或补充说明...";
+    textarea.value = comment.comment;
+    textarea.rows = 3;
+
+    textarea.addEventListener("input", () => {
+      comment.comment = textarea.value;
+      comment.updatedAt = Date.now();
+      this.autoResizeTextarea(textarea);
+      this.scheduleEditSave();
+    });
+
+    doneButton.addEventListener("click", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.flushEditSave();
+      this.renderHoverContent(container, id, this.getComment(id), sourceEl);
+    });
+
+    window.setTimeout(() => {
+      this.autoResizeTextarea(textarea);
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }, 0);
   }
 
   private renderEditPopover(comment: CommentRecord): void {
@@ -1003,10 +1069,13 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private closeStylePickers(): void {
-    const pickers = this.editPopoverEl?.querySelectorAll<HTMLElement>(".onc-style-picker.onc-open") ?? [];
-    for (const picker of Array.from(pickers)) {
-      picker.removeClass("onc-open");
-      picker.querySelector("button")?.setAttribute("aria-expanded", "false");
+    const roots = [this.editPopoverEl, this.bottomSheetEl, this.inlinePopoverEl];
+    for (const root of roots) {
+      const pickers = root?.querySelectorAll<HTMLElement>(".onc-style-picker.onc-open") ?? [];
+      for (const picker of Array.from(pickers)) {
+        picker.removeClass("onc-open");
+        picker.querySelector("button")?.setAttribute("aria-expanded", "false");
+      }
     }
   }
 
@@ -1090,6 +1159,8 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   private hideHoverSurfaces(): void {
+    this.flushEditSave();
+    this.closeStylePickers();
     this.inlineAnchorEl = null;
     this.bottomSheetEl?.removeClass("onc-visible");
     this.inlinePopoverEl?.removeClass("onc-visible");
