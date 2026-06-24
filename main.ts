@@ -25,6 +25,7 @@ import {
 
 type CommentDisplayMode = "bottom-sheet" | "inline-popover" | "right-side";
 type UnderlineStyle = "solid" | "dotted" | "dashed" | "wavy";
+type Language = "zh" | "en";
 
 interface HighlightStyle {
   id: string;
@@ -48,6 +49,7 @@ interface CommentRecord {
 }
 
 interface NotesCommentsSettings {
+  language: Language;
   displayMode: CommentDisplayMode;
   defaultStyleId: string;
   commenterName: string;
@@ -90,6 +92,185 @@ type RegisterEditorMenuEvent = (
 ) => EventRef;
 
 const DEFAULT_STYLE_ID = "yellow-marker";
+const DEFAULT_LANGUAGE: Language = "zh";
+
+const ZH_TRANSLATIONS = {
+  addHighlightComment: "添加标记留言",
+  editCursorComment: "编辑光标处的标记留言",
+  removeCursorComment: "删除光标处的标记留言",
+  editHighlightComment: "编辑标记留言",
+  removeHighlightComment: "删除标记留言",
+  customStyleName: "自定义样式",
+  untitledStyleName: "未命名样式",
+  keepOneStyleNotice: "至少需要保留一个标记样式。",
+  selectTextNotice: "请先选中需要标记的文字。",
+  unsafeSpanNotice: "选区包含 </span>，暂时无法安全添加标记。",
+  noWritableMarkdownNotice: "当前没有可写入的 Markdown 文件。",
+  cursorNotInCommentNotice: "光标不在标记留言中。",
+  confirmDeleteMarkAndComment: "确定删除这个标记和留言吗？",
+  commentDataNotFound: "未找到这条留言的数据。",
+  deletedDataMarkMissingNotice: "已删除留言数据，但没有找到正文标记。",
+  deletedMarkedCommentNotice: "已删除标记留言。",
+  deletedCommentNotice: "已删除这条留言。",
+  unknownNote: "未知备注",
+  addReply: "追加留言",
+  deleteThread: "删除整个标记线程",
+  removeMark: "移除标记",
+  confirmDeleteThread: "确定删除这个标记和全部留言吗？",
+  confirmRemoveInvalidMark: "确定移除这个失效标记吗？",
+  editThisComment: "编辑这条留言",
+  deleteThisComment: "删除这条留言",
+  confirmDeleteComment: "确定删除这条留言吗？如果这是最后一条留言，会同时移除正文标记。",
+  replyContent: "追加留言内容",
+  replyPlaceholder: "继续补充这个标记处的留言...",
+  saveReply: "保存追加留言",
+  cancel: "取消",
+  commentMarkWithComments: "有留言的标记",
+  emptyComment: "留言内容为空。",
+  editComment: "编辑留言",
+  doneEditing: "完成编辑",
+  commentContent: "留言内容",
+  commentPlaceholder: "写下你的留言或补充说明...",
+  emptyCommentNotice: "留言内容不能为空。",
+  addedCommentNotice: "已添加标记留言。",
+  markCommentDataNotFoundNotice: "未找到这个标记的留言数据。",
+  addedReplyNotice: "已追加留言。",
+  authorName: "备注人名称",
+  authorPlaceholderPrefix: "备注人",
+  markStyle: "标记样式",
+  settingLanguageName: "语言",
+  settingLanguageDesc: "选择插件界面显示语言。",
+  languageZh: "中文",
+  languageEn: "English",
+  settingDisplayModeName: "留言展示方式",
+  settingDisplayModeDesc: "选择鼠标移动到标记文字时，留言框出现的位置。",
+  displayModeBottomSheet: "底部中间滑出",
+  displayModeInlinePopover: "标记处弹出",
+  displayModeRightSide: "中间右侧滑出",
+  settingDefaultAuthorName: "默认备注人名称",
+  settingDefaultAuthorDesc: "新增或编辑留言时，如果备注人名称留空，就使用这个名称。",
+  settingDefaultStyleName: "默认标记样式",
+  settingDefaultStyleDesc: "新增标记留言时默认使用的样式。",
+  settingStylesName: "样式预设",
+  settingStylesDesc: "可以调整预设颜色，也可以新增自己的样式。",
+  addStyle: "新增样式",
+  resetStyles: "重置预设",
+  confirmResetStyles: "确定重置所有样式预设吗？使用已删除样式的留言会回退到默认样式。",
+  styleName: "名称",
+  backgroundColor: "背景色",
+  textColor: "文字色",
+  underlineColor: "下划线颜色",
+  underlineStyle: "下划线样式",
+  underlineSolid: "实线",
+  underlineDotted: "点线",
+  underlineDashed: "虚线",
+  underlineWavy: "波浪线",
+  deleteStyle: "删除这个样式",
+  deleteStyleDesc: "使用这个样式的留言会切换到其他可用样式。",
+  delete: "删除",
+  confirmDeleteStylePrefix: "确定删除「",
+  confirmDeleteStyleSuffix: "」吗？",
+  styleYellowMarker: "黄色荧光",
+  styleBlueNote: "蓝色批注",
+  styleGreenDotted: "绿色虚线",
+  styleRoseWavy: "玫瑰波浪"
+} as const;
+
+type TranslationKey = keyof typeof ZH_TRANSLATIONS;
+
+const EN_TRANSLATIONS: Record<TranslationKey, string> = {
+  addHighlightComment: "Add highlighted comment",
+  editCursorComment: "Edit comment at cursor",
+  removeCursorComment: "Remove comment at cursor",
+  editHighlightComment: "Edit highlighted comment",
+  removeHighlightComment: "Remove highlighted comment",
+  customStyleName: "Custom style",
+  untitledStyleName: "Untitled style",
+  keepOneStyleNotice: "Keep at least one highlight style.",
+  selectTextNotice: "Select the text you want to highlight first.",
+  unsafeSpanNotice: "The selection contains </span>, so a highlight cannot be added safely.",
+  noWritableMarkdownNotice: "There is no writable Markdown file right now.",
+  cursorNotInCommentNotice: "The cursor is not inside a highlighted comment.",
+  confirmDeleteMarkAndComment: "Delete this highlight and its comment?",
+  commentDataNotFound: "Comment data was not found.",
+  deletedDataMarkMissingNotice: "Deleted the comment data, but could not find the text highlight.",
+  deletedMarkedCommentNotice: "Deleted the highlighted comment.",
+  deletedCommentNotice: "Deleted this comment.",
+  unknownNote: "Unknown note",
+  addReply: "Add reply",
+  deleteThread: "Delete the full highlight thread",
+  removeMark: "Remove highlight",
+  confirmDeleteThread: "Delete this highlight and all comments?",
+  confirmRemoveInvalidMark: "Remove this invalid highlight?",
+  editThisComment: "Edit this comment",
+  deleteThisComment: "Delete this comment",
+  confirmDeleteComment: "Delete this comment? If it is the last comment, the text highlight will also be removed.",
+  replyContent: "Reply content",
+  replyPlaceholder: "Add another note for this highlight...",
+  saveReply: "Save reply",
+  cancel: "Cancel",
+  commentMarkWithComments: "Highlight with comments",
+  emptyComment: "Comment content is empty.",
+  editComment: "Edit comment",
+  doneEditing: "Done editing",
+  commentContent: "Comment content",
+  commentPlaceholder: "Write your comment or supplemental note...",
+  emptyCommentNotice: "Comment content cannot be empty.",
+  addedCommentNotice: "Added highlighted comment.",
+  markCommentDataNotFoundNotice: "Comment data for this highlight was not found.",
+  addedReplyNotice: "Added reply.",
+  authorName: "Author name",
+  authorPlaceholderPrefix: "Author",
+  markStyle: "Highlight style",
+  settingLanguageName: "Language",
+  settingLanguageDesc: "Choose the plugin interface language.",
+  languageZh: "中文",
+  languageEn: "English",
+  settingDisplayModeName: "Comment display mode",
+  settingDisplayModeDesc: "Choose where comments appear when hovering highlighted text.",
+  displayModeBottomSheet: "Bottom sheet",
+  displayModeInlinePopover: "Inline popover",
+  displayModeRightSide: "Right side panel",
+  settingDefaultAuthorName: "Default author name",
+  settingDefaultAuthorDesc: "Used when the author field is empty while adding or editing comments.",
+  settingDefaultStyleName: "Default highlight style",
+  settingDefaultStyleDesc: "Used by default when adding highlighted comments.",
+  settingStylesName: "Style presets",
+  settingStylesDesc: "Adjust preset colors or add your own styles.",
+  addStyle: "Add style",
+  resetStyles: "Reset presets",
+  confirmResetStyles: "Reset all style presets? Comments using deleted styles will fall back to the default style.",
+  styleName: "Name",
+  backgroundColor: "Background color",
+  textColor: "Text color",
+  underlineColor: "Underline color",
+  underlineStyle: "Underline style",
+  underlineSolid: "Solid",
+  underlineDotted: "Dotted",
+  underlineDashed: "Dashed",
+  underlineWavy: "Wavy",
+  deleteStyle: "Delete this style",
+  deleteStyleDesc: "Comments using this style will switch to another available style.",
+  delete: "Delete",
+  confirmDeleteStylePrefix: "Delete \"",
+  confirmDeleteStyleSuffix: "\"?",
+  styleYellowMarker: "Yellow highlight",
+  styleBlueNote: "Blue note",
+  styleGreenDotted: "Green dotted",
+  styleRoseWavy: "Rose wavy"
+};
+
+const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
+  zh: ZH_TRANSLATIONS,
+  en: EN_TRANSLATIONS
+};
+
+const DEFAULT_STYLE_NAME_KEYS: Record<string, TranslationKey> = {
+  "yellow-marker": "styleYellowMarker",
+  "blue-note": "styleBlueNote",
+  "green-dotted": "styleGreenDotted",
+  "rose-wavy": "styleRoseWavy"
+};
 
 const DEFAULT_STYLES: HighlightStyle[] = [
   {
@@ -127,10 +308,11 @@ const DEFAULT_STYLES: HighlightStyle[] = [
 ];
 
 const DEFAULT_SETTINGS: NotesCommentsSettings = {
+  language: DEFAULT_LANGUAGE,
   displayMode: "bottom-sheet",
   defaultStyleId: DEFAULT_STYLE_ID,
   commenterName: "Note Taker",
-  styles: cloneStyles(DEFAULT_STYLES),
+  styles: createDefaultStyles(DEFAULT_LANGUAGE),
   comments: []
 };
 
@@ -160,9 +342,21 @@ export default class NotesCommentsPlugin extends Plugin {
     this.registerEditorExtension(createCommentHighlightExtension(this));
     this.registerEditorContextMenu();
 
+    this.registerCommands();
+    this.addSettingTab(new NotesCommentsSettingTab(this.app, this));
+  }
+
+  refreshCommands(): void {
+    this.removeCommand("add-highlight-comment");
+    this.removeCommand("edit-highlight-comment-at-cursor");
+    this.removeCommand("remove-highlight-comment-at-cursor");
+    this.registerCommands();
+  }
+
+  private registerCommands(): void {
     this.addCommand({
       id: "add-highlight-comment",
-      name: "添加标记留言",
+      name: this.t("addHighlightComment"),
       editorCallback: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
         this.openCreateCommentPopover(editor, ctx);
       }
@@ -170,7 +364,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
     this.addCommand({
       id: "edit-highlight-comment-at-cursor",
-      name: "编辑光标处的标记留言",
+      name: this.t("editCursorComment"),
       editorCallback: (editor: Editor) => {
         this.openEditCommentAtCursor(editor);
       }
@@ -178,13 +372,11 @@ export default class NotesCommentsPlugin extends Plugin {
 
     this.addCommand({
       id: "remove-highlight-comment-at-cursor",
-      name: "删除光标处的标记留言",
+      name: this.t("removeCursorComment"),
       editorCallback: (editor: Editor) => {
         void this.removeCommentAtCursor(editor);
       }
     });
-
-    this.addSettingTab(new NotesCommentsSettingTab(this.app, this));
   }
 
   private registerEditorContextMenu(): void {
@@ -195,7 +387,7 @@ export default class NotesCommentsPlugin extends Plugin {
         if (editor.getSelection().trim()) {
           menu.addItem((item) => {
             item
-              .setTitle("添加标记留言")
+              .setTitle(this.t("addHighlightComment"))
               .setIcon("message-square-plus")
               .onClick(() => {
                 this.openCreateCommentPopover(editor, view);
@@ -210,7 +402,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
         menu.addItem((item) => {
           item
-            .setTitle("编辑标记留言")
+            .setTitle(this.t("editHighlightComment"))
             .setIcon("pencil")
             .onClick(() => {
               this.openEditCommentPopover(span.id, null, true);
@@ -219,7 +411,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
         menu.addItem((item) => {
           item
-            .setTitle("删除标记留言")
+            .setTitle(this.t("removeHighlightComment"))
             .setIcon("trash-2")
             .onClick(() => {
               void this.removeCommentAtCursor(editor);
@@ -240,7 +432,8 @@ export default class NotesCommentsPlugin extends Plugin {
   async loadSettings(): Promise<void> {
     const loaded = (await this.loadData()) as Partial<NotesCommentsSettings> | null;
 
-    const styles = normalizeStyles(loaded?.styles);
+    const language = normalizeLanguage(loaded?.language);
+    const styles = normalizeStyles(loaded?.styles, language);
     const loadedDefaultStyleId = typeof loaded?.defaultStyleId === "string" ? loaded.defaultStyleId : undefined;
     const fallbackStyleId = styles[0]?.id ?? DEFAULT_STYLE_ID;
     const defaultStyleId: string =
@@ -250,6 +443,7 @@ export default class NotesCommentsPlugin extends Plugin {
     const commenterName = normalizeCommenterName(loaded?.commenterName);
 
     this.settings = {
+      language,
       displayMode: normalizeDisplayMode(loaded?.displayMode),
       defaultStyleId,
       commenterName,
@@ -261,6 +455,28 @@ export default class NotesCommentsPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
     this.refreshDynamicStyles();
+  }
+
+  t(key: TranslationKey): string {
+    return translate(this.settings.language, key);
+  }
+
+  getStyleDisplayName(style: HighlightStyle): string {
+    return getStyleDisplayName(style, this.settings.language);
+  }
+
+  getCommentCountLabel(count: number): string {
+    return this.settings.language === "en" ? `${count} ${count === 1 ? "comment" : "comments"}` : `${count} 条留言`;
+  }
+
+  getCommentMarkAriaLabel(commentCount: number): string {
+    if (this.settings.language === "en") {
+      return commentCount > 1
+        ? `Highlight with ${commentCount} comments`
+        : this.t("commentMarkWithComments");
+    }
+
+    return commentCount > 1 ? `有 ${commentCount} 条留言的标记` : this.t("commentMarkWithComments");
   }
 
   getComment(id: string): CommentRecord | null {
@@ -303,7 +519,7 @@ export default class NotesCommentsPlugin extends Plugin {
     const id = `custom-${Date.now().toString(36)}`;
     this.settings.styles.push({
       id,
-      name: "自定义样式",
+      name: this.t("customStyleName"),
       backgroundColor: "#fef9c3",
       textColor: "#1f2937",
       underlineColor: "#a16207",
@@ -315,7 +531,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
   async removeStyle(styleId: string): Promise<void> {
     if (this.settings.styles.length <= 1) {
-      new Notice("至少需要保留一个标记样式。");
+      new Notice(this.t("keepOneStyleNotice"));
       return;
     }
 
@@ -339,7 +555,7 @@ export default class NotesCommentsPlugin extends Plugin {
   }
 
   async resetStyles(): Promise<void> {
-    this.settings.styles = cloneStyles(DEFAULT_STYLES);
+    this.settings.styles = createDefaultStyles(this.settings.language);
     if (!this.settings.styles.some((style) => style.id === this.settings.defaultStyleId)) {
       this.settings.defaultStyleId = DEFAULT_STYLE_ID;
     }
@@ -355,18 +571,18 @@ export default class NotesCommentsPlugin extends Plugin {
   openCreateCommentPopover(editor: Editor, view: MarkdownView | MarkdownFileInfo): void {
     const selectedText = editor.getSelection();
     if (!selectedText.trim()) {
-      new Notice("请先选中需要标记的文字。");
+      new Notice(this.t("selectTextNotice"));
       return;
     }
 
     if (selectedText.includes("</span>")) {
-      new Notice("选区包含 </span>，暂时无法安全添加标记。");
+      new Notice(this.t("unsafeSpanNotice"));
       return;
     }
 
     const filePath = view.file?.path;
     if (!filePath) {
-      new Notice("当前没有可写入的 Markdown 文件。");
+      new Notice(this.t("noWritableMarkdownNotice"));
       return;
     }
 
@@ -411,7 +627,7 @@ export default class NotesCommentsPlugin extends Plugin {
   openEditCommentAtCursor(editor: Editor): void {
     const span = findCommentSpanAtOffset(editor.getValue(), editor.posToOffset(editor.getCursor()));
     if (!span) {
-      new Notice("光标不在标记留言中。");
+      new Notice(this.t("cursorNotInCommentNotice"));
       return;
     }
 
@@ -421,11 +637,11 @@ export default class NotesCommentsPlugin extends Plugin {
   async removeCommentAtCursor(editor: Editor): Promise<void> {
     const span = findCommentSpanAtOffset(editor.getValue(), editor.posToOffset(editor.getCursor()));
     if (!span) {
-      new Notice("光标不在标记留言中。");
+      new Notice(this.t("cursorNotInCommentNotice"));
       return;
     }
 
-    if (!window.confirm("确定删除这个标记和留言吗？")) {
+    if (!window.confirm(this.t("confirmDeleteMarkAndComment"))) {
       return;
     }
 
@@ -436,7 +652,7 @@ export default class NotesCommentsPlugin extends Plugin {
     const threadLatestComment = this.getThreadLatestComment(id);
     const comment = preferThreadLatest && threadLatestComment ? threadLatestComment : this.getComment(id) ?? threadLatestComment;
     if (!comment) {
-      new Notice("未找到这条留言的数据。");
+      new Notice(this.t("commentDataNotFound"));
       return;
     }
 
@@ -482,7 +698,7 @@ export default class NotesCommentsPlugin extends Plugin {
     this.settings.comments = this.settings.comments.filter((record) => getCommentThreadId(record) !== threadId);
     await this.saveSettings();
     this.hideHoverSurfaces();
-    new Notice(unwrapMarkup && !markupChanged ? "已删除留言数据，但没有找到正文标记。" : "已删除标记留言。");
+    new Notice(unwrapMarkup && !markupChanged ? this.t("deletedDataMarkMissingNotice") : this.t("deletedMarkedCommentNotice"));
   }
 
   async deleteCommentMessage(commentId: string, unwrapWhenThreadEmpty: boolean): Promise<boolean> {
@@ -504,9 +720,9 @@ export default class NotesCommentsPlugin extends Plugin {
 
     if (remaining.length === 0) {
       this.hideHoverSurfaces();
-      new Notice(unwrapWhenThreadEmpty && !markupChanged ? "已删除留言数据，但没有找到正文标记。" : "已删除标记留言。");
+      new Notice(unwrapWhenThreadEmpty && !markupChanged ? this.t("deletedDataMarkMissingNotice") : this.t("deletedMarkedCommentNotice"));
     } else {
-      new Notice("已删除这条留言。");
+      new Notice(this.t("deletedCommentNotice"));
     }
 
     return true;
@@ -765,7 +981,7 @@ export default class NotesCommentsPlugin extends Plugin {
     const latestComment = comments[comments.length - 1] ?? null;
 
     const header = container.createDiv({ cls: "onc-comment-header" });
-    header.createDiv({ cls: "onc-comment-style-name", text: latestComment ? `${comments.length} 条留言` : "未知备注" });
+    header.createDiv({ cls: "onc-comment-style-name", text: latestComment ? this.getCommentCountLabel(comments.length) : this.t("unknownNote") });
     if (latestComment) {
       header.createDiv({
         cls: "onc-comment-time",
@@ -790,8 +1006,8 @@ export default class NotesCommentsPlugin extends Plugin {
         cls: "onc-comment-action onc-icon-button"
       });
       replyButton.type = "button";
-      replyButton.setAttribute("aria-label", "追加留言");
-      replyButton.setAttribute("title", "追加留言");
+      replyButton.setAttribute("aria-label", this.t("addReply"));
+      replyButton.setAttribute("title", this.t("addReply"));
       setIcon(replyButton, "message-square-plus");
       replyButton.addEventListener("click", (event: MouseEvent) => {
         event.preventDefault();
@@ -804,13 +1020,13 @@ export default class NotesCommentsPlugin extends Plugin {
       cls: "onc-comment-action onc-icon-button onc-danger"
     });
     deleteButton.type = "button";
-    deleteButton.setAttribute("aria-label", comments.length > 0 ? "删除整个标记线程" : "移除标记");
-    deleteButton.setAttribute("title", comments.length > 0 ? "删除整个标记线程" : "移除标记");
+    deleteButton.setAttribute("aria-label", comments.length > 0 ? this.t("deleteThread") : this.t("removeMark"));
+    deleteButton.setAttribute("title", comments.length > 0 ? this.t("deleteThread") : this.t("removeMark"));
     setIcon(deleteButton, "trash-2");
     deleteButton.addEventListener("click", (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!window.confirm(comments.length > 0 ? "确定删除这个标记和全部留言吗？" : "确定移除这个失效标记吗？")) {
+      if (!window.confirm(comments.length > 0 ? this.t("confirmDeleteThread") : this.t("confirmRemoveInvalidMark"))) {
         return;
       }
       void this.deleteCommentThread(threadId, true);
@@ -839,8 +1055,8 @@ export default class NotesCommentsPlugin extends Plugin {
       cls: "onc-comment-action onc-icon-button"
     });
     editButton.type = "button";
-    editButton.setAttribute("aria-label", "编辑这条留言");
-    editButton.setAttribute("title", "编辑这条留言");
+    editButton.setAttribute("aria-label", this.t("editThisComment"));
+    editButton.setAttribute("title", this.t("editThisComment"));
     setIcon(editButton, "pencil");
     editButton.addEventListener("click", (event: MouseEvent) => {
       event.preventDefault();
@@ -859,13 +1075,13 @@ export default class NotesCommentsPlugin extends Plugin {
       cls: "onc-comment-action onc-icon-button onc-danger"
     });
     deleteButton.type = "button";
-    deleteButton.setAttribute("aria-label", "删除这条留言");
-    deleteButton.setAttribute("title", "删除这条留言");
+    deleteButton.setAttribute("aria-label", this.t("deleteThisComment"));
+    deleteButton.setAttribute("title", this.t("deleteThisComment"));
     setIcon(deleteButton, "trash-2");
     deleteButton.addEventListener("click", (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!window.confirm("确定删除这条留言吗？如果这是最后一条留言，会同时移除正文标记。")) {
+      if (!window.confirm(this.t("confirmDeleteComment"))) {
         return;
       }
       void this.deleteCommentMessage(comment.id, true).then((deleted) => {
@@ -890,25 +1106,25 @@ export default class NotesCommentsPlugin extends Plugin {
     clearElement(container);
 
     const header = container.createDiv({ cls: "onc-comment-header" });
-    header.createDiv({ cls: "onc-comment-style-name", text: "追加留言" });
+    header.createDiv({ cls: "onc-comment-style-name", text: this.t("addReply") });
 
     const authorInput = this.renderAuthorInput(container, "");
     const textarea = container.createEl("textarea", { cls: "onc-edit-textarea onc-bottom-edit-textarea" });
-    textarea.setAttribute("aria-label", "追加留言内容");
-    textarea.placeholder = "继续补充这个标记处的留言...";
+    textarea.setAttribute("aria-label", this.t("replyContent"));
+    textarea.placeholder = this.t("replyPlaceholder");
     textarea.rows = 3;
 
     const actions = container.createDiv({ cls: "onc-comment-actions" });
     const saveButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
     saveButton.type = "button";
-    saveButton.setAttribute("aria-label", "保存追加留言");
-    saveButton.setAttribute("title", "保存追加留言");
+    saveButton.setAttribute("aria-label", this.t("saveReply"));
+    saveButton.setAttribute("title", this.t("saveReply"));
     setIcon(saveButton, "check");
 
     const cancelButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
     cancelButton.type = "button";
-    cancelButton.setAttribute("aria-label", "取消");
-    cancelButton.setAttribute("title", "取消");
+    cancelButton.setAttribute("aria-label", this.t("cancel"));
+    cancelButton.setAttribute("title", this.t("cancel"));
     setIcon(cancelButton, "x");
 
     const submit = async (): Promise<void> => {
@@ -959,7 +1175,7 @@ export default class NotesCommentsPlugin extends Plugin {
       mark.addClass("onc-comment-mark");
       mark.setAttribute("data-onc-style", this.getThreadStyleId(id, mark.getAttribute("data-onc-style") ?? this.settings.defaultStyleId));
       mark.setAttribute("tabindex", "0");
-      mark.setAttribute("aria-label", comments.length > 1 ? `有 ${comments.length} 条留言的标记` : "有留言的标记");
+      mark.setAttribute("aria-label", this.getCommentMarkAriaLabel(comments.length));
     }
   }
 
@@ -967,13 +1183,13 @@ export default class NotesCommentsPlugin extends Plugin {
     clearElement(container);
 
     if (!comment) {
-      container.setText("未找到这条留言的数据。");
+      container.setText(this.t("commentDataNotFound"));
       return;
     }
 
     const markdown = comment.comment.trim();
     if (!markdown) {
-      container.setText("留言内容为空。");
+      container.setText(this.t("emptyComment"));
       return;
     }
 
@@ -990,7 +1206,7 @@ export default class NotesCommentsPlugin extends Plugin {
     clearElement(container);
 
     const header = container.createDiv({ cls: "onc-comment-header" });
-    header.createDiv({ cls: "onc-comment-style-name", text: "编辑留言" });
+    header.createDiv({ cls: "onc-comment-style-name", text: this.t("editComment") });
 
     const styleRow = container.createDiv({ cls: "onc-edit-style-row" });
     this.renderStylePicker(styleRow, this.getThreadStyleId(threadId, comment.styleId), (styleId) => {
@@ -1000,14 +1216,14 @@ export default class NotesCommentsPlugin extends Plugin {
     const actions = styleRow.createDiv({ cls: "onc-edit-style-actions" });
     const doneButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
     doneButton.type = "button";
-    doneButton.setAttribute("aria-label", "完成编辑");
-    doneButton.setAttribute("title", "完成编辑");
+    doneButton.setAttribute("aria-label", this.t("doneEditing"));
+    doneButton.setAttribute("title", this.t("doneEditing"));
     setIcon(doneButton, "check");
 
     const authorInput = this.renderAuthorInput(container, comment.authorName);
     const textarea = container.createEl("textarea", { cls: "onc-edit-textarea onc-bottom-edit-textarea" });
-    textarea.setAttribute("aria-label", "留言内容");
-    textarea.placeholder = "写下你的留言或补充说明...";
+    textarea.setAttribute("aria-label", this.t("commentContent"));
+    textarea.placeholder = this.t("commentPlaceholder");
     textarea.value = comment.comment;
     textarea.rows = 3;
 
@@ -1053,8 +1269,8 @@ export default class NotesCommentsPlugin extends Plugin {
 
     const authorInput = this.renderAuthorInput(this.editPopoverEl, comment.authorName);
     const textarea = this.editPopoverEl.createEl("textarea", { cls: "onc-edit-textarea" });
-    textarea.setAttribute("aria-label", "留言内容");
-    textarea.placeholder = "写下你的留言或补充说明...";
+    textarea.setAttribute("aria-label", this.t("commentContent"));
+    textarea.placeholder = this.t("commentPlaceholder");
     textarea.value = comment.comment;
     textarea.rows = 3;
 
@@ -1087,20 +1303,20 @@ export default class NotesCommentsPlugin extends Plugin {
     const actions = styleRow.createDiv({ cls: "onc-edit-style-actions" });
     const saveButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
     saveButton.type = "button";
-    saveButton.setAttribute("aria-label", "添加标记留言");
-    saveButton.setAttribute("title", "添加标记留言");
+    saveButton.setAttribute("aria-label", this.t("addHighlightComment"));
+    saveButton.setAttribute("title", this.t("addHighlightComment"));
     setIcon(saveButton, "check");
 
     const cancelButton = actions.createEl("button", { cls: "onc-comment-action onc-icon-button" });
     cancelButton.type = "button";
-    cancelButton.setAttribute("aria-label", "取消");
-    cancelButton.setAttribute("title", "取消");
+    cancelButton.setAttribute("aria-label", this.t("cancel"));
+    cancelButton.setAttribute("title", this.t("cancel"));
     setIcon(cancelButton, "x");
 
     const authorInput = this.renderAuthorInput(this.editPopoverEl, "");
     const textarea = this.editPopoverEl.createEl("textarea", { cls: "onc-edit-textarea" });
-    textarea.setAttribute("aria-label", "留言内容");
-    textarea.placeholder = "写下你的留言或补充说明...";
+    textarea.setAttribute("aria-label", this.t("commentContent"));
+    textarea.placeholder = this.t("commentPlaceholder");
     textarea.rows = 3;
 
     const submit = async (): Promise<void> => {
@@ -1139,7 +1355,7 @@ export default class NotesCommentsPlugin extends Plugin {
   ): Promise<void> {
     const comment = commentText.trim();
     if (!comment) {
-      new Notice("留言内容不能为空。");
+      new Notice(this.t("emptyCommentNotice"));
       return;
     }
 
@@ -1162,19 +1378,19 @@ export default class NotesCommentsPlugin extends Plugin {
     draft.editor.replaceRange(buildCommentMarkup(draft.selectedText, id, resolvedStyleId), draft.from, draft.to);
     await this.saveSettings();
     this.closeEditPopover();
-    new Notice("已添加标记留言。");
+    new Notice(this.t("addedCommentNotice"));
   }
 
   private async addThreadReply(threadId: string, commentText: string, authorNameText: string): Promise<boolean> {
     const comment = commentText.trim();
     if (!comment) {
-      new Notice("留言内容不能为空。");
+      new Notice(this.t("emptyCommentNotice"));
       return false;
     }
 
     const primaryComment = this.getThreadPrimaryComment(threadId);
     if (!primaryComment) {
-      new Notice("未找到这个标记的留言数据。");
+      new Notice(this.t("markCommentDataNotFoundNotice"));
       return false;
     }
 
@@ -1192,15 +1408,15 @@ export default class NotesCommentsPlugin extends Plugin {
     });
 
     await this.saveSettings();
-    new Notice("已追加留言。");
+    new Notice(this.t("addedReplyNotice"));
     return true;
   }
 
   private renderAuthorInput(parentEl: HTMLElement, value: string): HTMLInputElement {
     const input = parentEl.createEl("input", { cls: "onc-author-input" });
     input.type = "text";
-    input.setAttribute("aria-label", "备注人名称");
-    input.placeholder = `备注人：${this.settings.commenterName}`;
+    input.setAttribute("aria-label", this.t("authorName"));
+    input.placeholder = `${this.t("authorPlaceholderPrefix")}: ${this.settings.commenterName}`;
     input.value = value;
     return input;
   }
@@ -1214,7 +1430,7 @@ export default class NotesCommentsPlugin extends Plugin {
     const wrapper = parentEl.createDiv({ cls: "onc-style-picker" });
     const trigger = wrapper.createEl("button", { cls: "onc-style-picker-trigger" });
     trigger.type = "button";
-    trigger.setAttribute("aria-label", "标记样式");
+    trigger.setAttribute("aria-label", this.t("markStyle"));
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", "false");
 
@@ -1233,7 +1449,7 @@ export default class NotesCommentsPlugin extends Plugin {
 
     const updateTrigger = (): void => {
       const style = this.getStyle(currentStyleId);
-      label.setText(style.name);
+      label.setText(this.getStyleDisplayName(style));
       swatch.style.backgroundColor = style.backgroundColor;
       swatch.style.borderColor = style.underlineColor;
       const options = menu.querySelectorAll<HTMLElement>(".onc-style-picker-option");
@@ -1252,7 +1468,7 @@ export default class NotesCommentsPlugin extends Plugin {
       const optionSwatch = option.createSpan({ cls: "onc-style-picker-swatch" });
       optionSwatch.style.backgroundColor = style.backgroundColor;
       optionSwatch.style.borderColor = style.underlineColor;
-      option.createSpan({ cls: "onc-style-picker-option-label", text: style.name });
+      option.createSpan({ cls: "onc-style-picker-option-label", text: this.getStyleDisplayName(style) });
 
       option.addEventListener("click", (event: MouseEvent) => {
         event.preventDefault();
@@ -1311,6 +1527,17 @@ export default class NotesCommentsPlugin extends Plugin {
     const marks = document.querySelectorAll<HTMLElement>(selector);
     for (const mark of Array.from(marks)) {
       mark.setAttribute("data-onc-style", styleId);
+    }
+  }
+
+  refreshVisibleMarkLabels(): void {
+    const marks = document.querySelectorAll<HTMLElement>(".onc-comment-mark[data-onc-id]");
+    for (const mark of Array.from(marks)) {
+      const id = mark.getAttribute("data-onc-id");
+      if (!id) {
+        continue;
+      }
+      mark.setAttribute("aria-label", this.getCommentMarkAriaLabel(this.getThreadComments(id).length));
     }
   }
 
@@ -1554,27 +1781,47 @@ class NotesCommentsSettingTab extends PluginSettingTab {
     containerEl.addClass("onc-settings");
     containerEl.createEl("h2", { text: "Notes Comments" });
 
+    const languageSetting = new Setting(containerEl)
+      .setName(this.plugin.t("settingLanguageName"))
+      .setDesc(this.plugin.t("settingLanguageDesc"));
+    this.renderSettingsDropdown(
+      languageSetting.controlEl,
+      [
+        { value: "zh", label: this.plugin.t("languageZh") },
+        { value: "en", label: this.plugin.t("languageEn") }
+      ],
+      this.plugin.settings.language,
+      async (value) => {
+        this.plugin.settings.language = normalizeLanguage(value);
+        await this.plugin.saveSettings();
+        this.plugin.refreshCommands();
+        this.plugin.refreshVisibleMarkLabels();
+        this.display();
+      },
+      this.plugin.t("settingLanguageName")
+    );
+
     const displayModeSetting = new Setting(containerEl)
-      .setName("留言展示方式")
-      .setDesc("选择鼠标移动到标记文字时，留言框出现的位置。");
+      .setName(this.plugin.t("settingDisplayModeName"))
+      .setDesc(this.plugin.t("settingDisplayModeDesc"));
     this.renderSettingsDropdown(
       displayModeSetting.controlEl,
       [
-        { value: "bottom-sheet", label: "底部中间滑出" },
-        { value: "inline-popover", label: "标记处弹出" },
-        { value: "right-side", label: "中间右侧滑出" }
+        { value: "bottom-sheet", label: this.plugin.t("displayModeBottomSheet") },
+        { value: "inline-popover", label: this.plugin.t("displayModeInlinePopover") },
+        { value: "right-side", label: this.plugin.t("displayModeRightSide") }
       ],
       this.plugin.settings.displayMode,
       async (value) => {
         this.plugin.settings.displayMode = value as CommentDisplayMode;
         await this.plugin.saveSettings();
       },
-      "留言展示方式"
+      this.plugin.t("settingDisplayModeName")
     );
 
     new Setting(containerEl)
-      .setName("默认备注人名称")
-      .setDesc("新增或编辑留言时，如果备注人名称留空，就使用这个名称。")
+      .setName(this.plugin.t("settingDefaultAuthorName"))
+      .setDesc(this.plugin.t("settingDefaultAuthorDesc"))
       .addText((text) => {
         text
           .setPlaceholder("Note Taker")
@@ -1586,13 +1833,13 @@ class NotesCommentsSettingTab extends PluginSettingTab {
       });
 
     const defaultStyleSetting = new Setting(containerEl)
-      .setName("默认标记样式")
-      .setDesc("新增标记留言时默认使用的样式。");
+      .setName(this.plugin.t("settingDefaultStyleName"))
+      .setDesc(this.plugin.t("settingDefaultStyleDesc"));
     this.renderSettingsDropdown(
       defaultStyleSetting.controlEl,
       this.plugin.settings.styles.map((style) => ({
         value: style.id,
-        label: style.name,
+        label: this.plugin.getStyleDisplayName(style),
         swatchColor: style.backgroundColor,
         swatchBorderColor: style.underlineColor
       })),
@@ -1601,15 +1848,15 @@ class NotesCommentsSettingTab extends PluginSettingTab {
         this.plugin.settings.defaultStyleId = value;
         await this.plugin.saveSettings();
       },
-      "默认标记样式"
+      this.plugin.t("settingDefaultStyleName")
     );
 
     new Setting(containerEl)
-      .setName("样式预设")
-      .setDesc("可以调整预设颜色，也可以新增自己的样式。")
+      .setName(this.plugin.t("settingStylesName"))
+      .setDesc(this.plugin.t("settingStylesDesc"))
       .addButton((button) => {
         button
-          .setButtonText("新增样式")
+          .setButtonText(this.plugin.t("addStyle"))
           .onClick(async () => {
             await this.plugin.addCustomStyle();
             this.display();
@@ -1617,9 +1864,9 @@ class NotesCommentsSettingTab extends PluginSettingTab {
       })
       .addButton((button) => {
         button
-          .setButtonText("重置预设")
+          .setButtonText(this.plugin.t("resetStyles"))
           .onClick(async () => {
-            if (!window.confirm("确定重置所有样式预设吗？使用已删除样式的留言会回退到默认样式。")) {
+            if (!window.confirm(this.plugin.t("confirmResetStyles"))) {
               return;
             }
             await this.plugin.resetStyles();
@@ -1634,21 +1881,21 @@ class NotesCommentsSettingTab extends PluginSettingTab {
 
   private renderStyleEditor(containerEl: HTMLElement, style: HighlightStyle): void {
     const section = containerEl.createDiv({ cls: "onc-style-editor" });
-    section.createEl("h3", { text: style.name });
+    section.createEl("h3", { text: this.plugin.getStyleDisplayName(style) });
 
     new Setting(section)
-      .setName("名称")
+      .setName(this.plugin.t("styleName"))
       .addText((text) => {
         text
-          .setValue(style.name)
+          .setValue(this.plugin.getStyleDisplayName(style))
           .onChange(async (value) => {
-            style.name = value.trim() || "未命名样式";
+            style.name = value.trim() || this.plugin.t("untitledStyleName");
             await this.plugin.saveSettings();
           });
       });
 
     new Setting(section)
-      .setName("背景色")
+      .setName(this.plugin.t("backgroundColor"))
       .addColorPicker((picker) => {
         picker
           .setValue(style.backgroundColor)
@@ -1659,7 +1906,7 @@ class NotesCommentsSettingTab extends PluginSettingTab {
       });
 
     new Setting(section)
-      .setName("文字色")
+      .setName(this.plugin.t("textColor"))
       .addColorPicker((picker) => {
         picker
           .setValue(normalizeColorPickerValue(style.textColor))
@@ -1670,7 +1917,7 @@ class NotesCommentsSettingTab extends PluginSettingTab {
       });
 
     new Setting(section)
-      .setName("下划线颜色")
+      .setName(this.plugin.t("underlineColor"))
       .addColorPicker((picker) => {
         picker
           .setValue(style.underlineColor)
@@ -1680,32 +1927,32 @@ class NotesCommentsSettingTab extends PluginSettingTab {
           });
       });
 
-    const underlineSetting = new Setting(section).setName("下划线样式");
+    const underlineSetting = new Setting(section).setName(this.plugin.t("underlineStyle"));
     this.renderSettingsDropdown(
       underlineSetting.controlEl,
       [
-        { value: "solid", label: "实线" },
-        { value: "dotted", label: "点线" },
-        { value: "dashed", label: "虚线" },
-        { value: "wavy", label: "波浪线" }
+        { value: "solid", label: this.plugin.t("underlineSolid") },
+        { value: "dotted", label: this.plugin.t("underlineDotted") },
+        { value: "dashed", label: this.plugin.t("underlineDashed") },
+        { value: "wavy", label: this.plugin.t("underlineWavy") }
       ],
       style.underlineStyle,
       async (value) => {
         style.underlineStyle = safeUnderlineStyle(value);
         await this.plugin.saveSettings();
       },
-      "下划线样式"
+      this.plugin.t("underlineStyle")
     );
 
     new Setting(section)
-      .setName("删除这个样式")
-      .setDesc("使用这个样式的留言会切换到其他可用样式。")
+      .setName(this.plugin.t("deleteStyle"))
+      .setDesc(this.plugin.t("deleteStyleDesc"))
       .addButton((button) => {
         button
-          .setButtonText("删除")
+          .setButtonText(this.plugin.t("delete"))
           .setWarning()
           .onClick(async () => {
-            if (!window.confirm(`确定删除「${style.name}」吗？`)) {
+            if (!window.confirm(`${this.plugin.t("confirmDeleteStylePrefix")}${this.plugin.getStyleDisplayName(style)}${this.plugin.t("confirmDeleteStyleSuffix")}`)) {
               return;
             }
             await this.plugin.removeStyle(style.id);
@@ -1844,7 +2091,7 @@ function buildCommentDecorations(view: EditorView, plugin: NotesCommentsPlugin):
         attributes: {
           "data-onc-id": span.id,
           "data-onc-style": styleId,
-          "aria-label": commentCount > 1 ? `有 ${commentCount} 条留言的标记` : "有留言的标记"
+          "aria-label": plugin.getCommentMarkAriaLabel(commentCount)
         }
       })
     );
@@ -1958,6 +2205,32 @@ function createCommentId(): string {
   return `onc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function normalizeLanguage(value: unknown): Language {
+  return value === "en" ? "en" : DEFAULT_LANGUAGE;
+}
+
+function translate(language: Language, key: TranslationKey): string {
+  return TRANSLATIONS[language]?.[key] ?? TRANSLATIONS[DEFAULT_LANGUAGE][key];
+}
+
+function createDefaultStyles(language: Language): HighlightStyle[] {
+  return DEFAULT_STYLES.map((style) => ({
+    ...style,
+    name: translate(language, DEFAULT_STYLE_NAME_KEYS[style.id] ?? "untitledStyleName")
+  }));
+}
+
+function getStyleDisplayName(style: HighlightStyle, language: Language): string {
+  const key = DEFAULT_STYLE_NAME_KEYS[style.id];
+  const name = style.name?.trim();
+  if (!key || !name) {
+    return name || translate(language, "untitledStyleName");
+  }
+
+  const defaultNames = Object.keys(TRANSLATIONS).map((entry) => translate(entry as Language, key));
+  return defaultNames.includes(name) ? translate(language, key) : name;
+}
+
 function normalizeDisplayMode(value: unknown): CommentDisplayMode {
   if (value === "inline-popover" || value === "right-side") {
     return value;
@@ -1973,20 +2246,20 @@ function resolveCommenterName(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : normalizeCommenterName(fallback);
 }
 
-function normalizeStyles(styles: HighlightStyle[] | undefined): HighlightStyle[] {
-  const source = Array.isArray(styles) && styles.length > 0 ? styles : DEFAULT_STYLES;
+function normalizeStyles(styles: HighlightStyle[] | undefined, language: Language): HighlightStyle[] {
+  const source = Array.isArray(styles) && styles.length > 0 ? styles : createDefaultStyles(language);
   const normalized = source
     .filter((style) => typeof style.id === "string" && style.id.trim())
     .map((style) => ({
       id: style.id,
-      name: style.name?.trim() || "未命名样式",
+      name: style.name?.trim() || translate(language, "untitledStyleName"),
       backgroundColor: normalizeColorPickerValue(style.backgroundColor),
       textColor: normalizeColorPickerValue(style.textColor),
       underlineColor: normalizeColorPickerValue(style.underlineColor),
       underlineStyle: safeUnderlineStyle(style.underlineStyle)
     }));
 
-  return normalized.length > 0 ? normalized : cloneStyles(DEFAULT_STYLES);
+  return normalized.length > 0 ? normalized : createDefaultStyles(language);
 }
 
 function normalizeComments(
@@ -2015,10 +2288,6 @@ function normalizeComments(
 
 function getCommentThreadId(comment: CommentRecord): string {
   return typeof comment.threadId === "string" && comment.threadId.trim() ? comment.threadId : comment.id;
-}
-
-function cloneStyles(styles: HighlightStyle[]): HighlightStyle[] {
-  return styles.map((style) => ({ ...style }));
 }
 
 function normalizeColorPickerValue(value: string | undefined): string {
